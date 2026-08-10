@@ -116,6 +116,7 @@ namespace OMF_Editor
             lbxMotions.DisplayMember = "Name";
 
             LabelStatusFile.Text = "untitled";
+            UpdateBonePartsWarning();		// a skeleton from an SDK file always has names
             saveAsToolStripMenuItem.Enabled = true;
             saveToolStripMenuItem.Enabled = true;
             toolsToolStripMenuItem.Enabled = true;

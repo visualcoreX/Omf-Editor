@@ -103,7 +103,36 @@ namespace OMF_Editor
             textBoxes.Add(tbxMotFall);
             textBoxes.Add(tbxMotLength);
 
+            InitBonePartsWarning();
+
             DisableInput();
+        }
+
+        // Sits next to the file name and lights up for an OMF that keeps its
+        // bone parts as bare ids. Such a file is read and written back the way
+        // it came, but its bones have no names to show or to rename.
+        private ToolStripStatusLabel bonePartsWarning;
+
+        private void InitBonePartsWarning()
+        {
+            bonePartsWarning = new ToolStripStatusLabel();
+            bonePartsWarning.Text = "bone parts have no bone names";
+            bonePartsWarning.ToolTipText = "The bone parts of this OMF carry only bone ids. " +
+                "It is saved back the same way, and the viewport lines the motions up by bone order.";
+            bonePartsWarning.BackColor = System.Drawing.Color.Gold;
+            bonePartsWarning.ForeColor = System.Drawing.Color.FromArgb(40, 30, 0);
+            bonePartsWarning.Margin = new Padding(12, 2, 0, 2);
+            bonePartsWarning.Visible = false;
+            statusStrip1.Items.Add(bonePartsWarning);
+        }
+
+        private void UpdateBonePartsWarning()
+        {
+            if (bonePartsWarning == null)
+                return;
+            bonePartsWarning.Visible = Main_OMF != null
+                && Main_OMF.bone_cont != null
+                && Main_OMF.bone_cont.NamelessBones;
         }
 
         private void OpenFile(string filename)
@@ -126,6 +155,8 @@ namespace OMF_Editor
                 AddRecentFile(filename);
                 RequestViewportUpdate(true);
             }
+
+            UpdateBonePartsWarning();
         }
 
         AnimationsContainer OpenSecondOMF(string filename)
