@@ -516,15 +516,30 @@ bool ogf_export_glb(const xr_ogf& ogf, const xr_skl_motion* motion, float frame,
 		bone_motion.assign(bones.size(), static_cast<const xr_bone_motion*>(0));
 		const xr_bone_motion_vec& bone_motions = motion->bone_motions();
 		std::map<std::string, const xr_bone_motion*> by_name;
+		bool unnamed = true;
 		for (size_t i = 0; i != bone_motions.size(); ++i) {
-			if (bone_motions[i])
-				by_name[bone_motions[i]->name()] = bone_motions[i];
+			if (bone_motions[i] == 0)
+				continue;
+			by_name[bone_motions[i]->name()] = bone_motions[i];
+			if (!bone_motions[i]->name().empty())
+				unnamed = false;
 		}
+		size_t matched = 0;
 		for (size_t i = 0; i != bones.size(); ++i) {
 			std::map<std::string, const xr_bone_motion*>::const_iterator it =
 					by_name.find(bones[i].name);
-			if (it != by_name.end())
+			if (it != by_name.end()) {
 				bone_motion[i] = it->second;
+				++matched;
+			}
+		}
+		// An OMF that holds its bones as bare ids gives their motions no names
+		// to match on. There the id is the place in the skeleton, so the bones
+		// are taken in order - but only when the names told us nothing at all,
+		// or a motion made for another skeleton would be pulled onto this one.
+		if (matched == 0 && unnamed && bone_motions.size() >= bones.size()) {
+			for (size_t i = 0; i != bones.size(); ++i)
+				bone_motion[i] = bone_motions[i];
 		}
 
 		num_frames = motion->frame_end() - motion->frame_start();

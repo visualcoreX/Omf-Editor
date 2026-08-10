@@ -12,7 +12,7 @@ struct xr_ogf_v4::bone_io: public xr_bone {
 };
 
 struct xr_ogf_v4::partition_io: public xr_partition {
-	void	import(xr_reader& r, xr_bone_vec& all_bones);
+	void	import(xr_reader& r, xr_bone_vec& all_bones, bool& nameless);
 };
 
 struct xr_ogf_v4::bone_motion_io: public xr_ogf::bone_motion_io {
@@ -366,12 +366,21 @@ void xr_ogf_v4::load_s_motions(xr_reader& r)
 	set_chunk_loaded(OGF4_S_MOTIONS);
 }
 
-inline void xr_ogf_v4::partition_io::import(xr_reader& r, xr_bone_vec& all_bones)
+inline void xr_ogf_v4::partition_io::import(xr_reader& r, xr_bone_vec& all_bones, bool& nameless)
 {
 	r.r_sz(m_name);
 	std::string name;
 	for (uint_fast32_t n = r.r_u16(); n; --n) {
-		r.r_sz(name);
+		name.clear();
+		if (!nameless) {
+			r.r_sz(name);
+			// Some OMFs hold their bones as bare ids. The zero read as a
+			// terminator is the first byte of such an id, so it goes back.
+			if (name.empty()) {
+				r.seek(r.tell() - 1);
+				nameless = true;
+			}
+		}
 		uint_fast32_t id = r.r_u32();
 		xr_assert(id < MAX_BONES);
 		if (all_bones.size() <= id)
@@ -416,11 +425,13 @@ inline uint16_t xr_ogf_v4::motion_io::import_params(xr_reader& r, unsigned versi
 
 struct read_partition_v4 {
 	xr_bone_vec& all_bones;
-	read_partition_v4(xr_bone_vec& _all_bones): all_bones(_all_bones) {}
+	bool& nameless;
+	read_partition_v4(xr_bone_vec& _all_bones, bool& _nameless):
+		all_bones(_all_bones), nameless(_nameless) {}
 	void operator()(xr_partition*& _part, xr_reader& r) {
 		xr_ogf_v4::partition_io* part = new xr_ogf_v4::partition_io;
 		_part = part;
-		part->import(r, all_bones);
+		part->import(r, all_bones, nameless);
 	}
 };
 
@@ -430,7 +441,9 @@ void xr_ogf_v4::load_s_smparams(xr_reader& r)
 	xr_assert(version == OGF4_S_SMPARAMS_VERSION_3 || version == OGF4_S_SMPARAMS_VERSION_4);
 
 	assert(m_partitions.empty());
-	r.r_seq(r.r_u16(), m_partitions, read_partition_v4(m_bones));
+	// once one partition turns out to hold bare ids, the rest of them do too
+	bool nameless = false;
+	r.r_seq(r.r_u16(), m_partitions, read_partition_v4(m_bones, nameless));
 	setup_partitions();
 
 	assert(m_motions.empty());
