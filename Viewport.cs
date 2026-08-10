@@ -1121,6 +1121,12 @@ namespace OMF_Editor
                         ? " --animation-progress=advanced"
                         : " --animation-progress=true";
                 }
+                // the shipped config mirrors the model in the floor grid. The
+                // grid itself is worth keeping - it says where the ground is -
+                // but the reflection under a dark X-Ray model only muddles it
+                if (ViewportHelpText().Contains("--grid-reflection"))
+                    arguments += " --grid-reflection=0";
+
                 if (viewportAutoPlayItem.Checked && ViewportAutoPlaySupported())
                     arguments += " --animation-autoplay";
 
