@@ -290,6 +290,19 @@ namespace OMF_Editor
             OGF_V = motionVersion;
             Count = 1;
 
+            // A skeleton read out of a file that had no names for its bones -
+            // an SDK file made from such an OMF, say - stays that way, or it
+            // would be written back as empty names, which is neither shape.
+            NamelessBones = true;
+            for (int i = 0; i != boneNames.Count; ++i)
+            {
+                if (!string.IsNullOrEmpty(boneNames[i]))
+                {
+                    NamelessBones = false;
+                    break;
+                }
+            }
+
             BoneParts part = new BoneParts();
             part.Name = "default";
             part.Count = (short)boneNames.Count;
