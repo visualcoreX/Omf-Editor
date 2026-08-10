@@ -249,9 +249,12 @@ float xr_envelope::evaluate(float time) const
 		}
 	}
 
-	xr_key_vec_cit it = m_keys.begin() + 1;
 	// FIXME: use bisection
-	while ((*it)->time < time)
+	// the search stops at the last key: a behaviour the switches above do not
+	// know about leaves the time outside the range, and running past the end
+	// here reads whatever follows the vector
+	xr_key_vec_cit it = m_keys.begin() + 1, stop = m_keys.end() - 1;
+	while (it != stop && (*it)->time < time)
 		++it;
 	xr_key* key0 = *(it - 1);
 	xr_key* key1 = *it;

@@ -47,6 +47,9 @@ namespace OMF_Editor
             System.Threading.Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-US");
 
             InitButtons();
+            InitViewport();
+            InitRecentFiles();
+            InitSklImport();
 
             this.Opacity = 0;
 
@@ -119,6 +122,9 @@ namespace OMF_Editor
                 saveToolStripMenuItem.Enabled = true;
                 toolsToolStripMenuItem.Enabled = true;
                 showBonePartsToolStripMenuItem.Enabled = true;
+
+                AddRecentFile(filename);
+                RequestViewportUpdate(true);
             }
         }
 
@@ -807,6 +813,8 @@ namespace OMF_Editor
                 DisableInput();
             else if (lbxMotions.SelectedItems.Count == 1)
                 MotionParamsUpdate();
+
+            RequestViewportUpdate();
         }
 
         private void btnAddMarkGroup_Click(object sender, EventArgs e)
@@ -1001,7 +1009,7 @@ namespace OMF_Editor
 
         private void linkLabel1_LinkClicked(object sender, EventArgs e)
         {
-            System.Diagnostics.Process.Start("https://github.com/VaIeroK/Omf-Editor");
+            System.Diagnostics.Process.Start("https://github.com/visualcoreX/Omf-Editor");
         }
 
         private void swapAnimsToolStripMenuItem_Click(object sender, EventArgs e)

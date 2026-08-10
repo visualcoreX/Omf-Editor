@@ -78,6 +78,16 @@ public:
 	const xr_bone_motion_vec&	bone_motions() const;
 	xr_bone_motion_vec&		bone_motions();
 
+	float		speed() const;
+
+	// the rest of what an OMF keeps next to the keys, for tools that move
+	// motions between the two formats
+	float		accrue() const;
+	float		falloff() const;
+	float		power() const;
+	unsigned	flags() const;
+	uint16_t	bone_or_part() const;
+
 		int		marks_size();
 
 	uint8_t		bone_motion_flags(uint16_t bone_id) const;
@@ -125,10 +135,16 @@ inline const xr_bone_motion_vec& xr_skl_motion::bone_motions() const
 {
 	return m_bone_motions;
 }
+inline float xr_skl_motion::accrue() const { return m_accrue; }
+inline float xr_skl_motion::falloff() const { return m_falloff; }
+inline float xr_skl_motion::power() const { return m_power; }
+inline unsigned xr_skl_motion::flags() const { return m_flags; }
+inline uint16_t xr_skl_motion::bone_or_part() const { return m_bone_or_part; }
 inline xr_bone_motion_vec& xr_skl_motion::bone_motions()
 {
 	return m_bone_motions;
 }
+inline float xr_skl_motion::speed() const { return m_speed; }
 inline int xr_skl_motion::marks_size()
 {
 	return m_marks.size();

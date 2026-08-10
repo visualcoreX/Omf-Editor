@@ -1,0 +1,287 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Windows.Forms;
+
+namespace OMF_Editor
+{
+    // Pulling motions out of SDK files. A .skl holds one, a .skls holds many,
+    // and both keep their keys as envelopes - converter.dll samples them frame
+    // by frame and packs them the way an OMF stores motions, for the bones of
+    // the file currently open.
+    public partial class OMF_Editor
+    {
+        [DllImport("converter.dll", CharSet = CharSet.Ansi)]
+        private static extern int SklOpen(string path);
+
+        [DllImport("converter.dll", CharSet = CharSet.Ansi)]
+        private static extern int SklGetLastError(StringBuilder buffer, int size);
+
+        [DllImport("converter.dll", CharSet = CharSet.Ansi)]
+        private static extern int SklGetName(int index, StringBuilder buffer, int size);
+
+        [DllImport("converter.dll")]
+        private static extern int SklGetParams(int index, out float speed, out float accrue,
+            out float falloff, out float power, out int flags, out int bone_or_part, out int frames);
+
+        [DllImport("converter.dll", CharSet = CharSet.Ansi)]
+        private static extern int SklGetData(int index, string bone_names, byte[] buffer, int size);
+
+        [DllImport("converter.dll")]
+        private static extern void SklClose();
+
+        [DllImport("converter.dll")]
+        private static extern int SklGetBoneCount();
+
+        [DllImport("converter.dll", CharSet = CharSet.Ansi)]
+        private static extern int SklGetBoneName(int index, StringBuilder buffer, int size);
+
+        private ToolStripMenuItem sklImportItem;
+
+        // Called from the form constructor.
+        private void InitSklImport()
+        {
+            sklImportItem = new ToolStripMenuItem("Load/add from skl/skls...");
+            sklImportItem.Click += SklImportClick;
+
+            // in File, right after the recent files: it is a way of getting
+            // motions in, same as opening a file
+            int at = fileToolStripMenuItem.DropDownItems.IndexOf(recentFilesItem);
+            fileToolStripMenuItem.DropDownItems.Insert(at + 1, sklImportItem);
+        }
+
+        // The bones of the open OMF in their own order, which is the order the
+        // key streams of a motion follow.
+        private List<string> OmfBoneNames()
+        {
+            SortedDictionary<uint, string> byId = new SortedDictionary<uint, string>();
+            foreach (BoneParts part in Main_OMF.bone_cont.parts)
+            {
+                foreach (BoneVector bone in part.bones)
+                {
+                    if (!byId.ContainsKey(bone.ID))
+                        byId.Add(bone.ID, bone.Name);
+                }
+            }
+
+            List<string> names = new List<string>();
+            foreach (KeyValuePair<uint, string> bone in byId)
+                names.Add(bone.Value);
+            return names;
+        }
+
+        private static string SklLastError()
+        {
+            StringBuilder buffer = new StringBuilder(1024);
+            SklGetLastError(buffer, buffer.Capacity);
+            string text = buffer.ToString();
+            return text.Length > 0 ? text : "unknown error";
+        }
+
+        // The bones the loaded SDK file was made for. Used to start an OMF from
+        // nothing when the editor has none open.
+        private List<string> SklBoneNames()
+        {
+            List<string> names = new List<string>();
+            int count = SklGetBoneCount();
+            StringBuilder buffer = new StringBuilder(512);
+            for (int i = 0; i != count; ++i)
+            {
+                buffer.Length = 0;
+                SklGetBoneName(i, buffer, buffer.Capacity);
+                names.Add(buffer.ToString());
+            }
+            return names;
+        }
+
+        // Builds an OMF around the motions just read, with their own skeleton.
+        private bool StartOmfFromSkl()
+        {
+            List<string> bones = SklBoneNames();
+            if (bones.Count == 0)
+            {
+                MessageBox.Show("The file carries no skeleton to build an OMF around.",
+                    "Load/add from skl/skls", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+
+            Main_OMF = new AnimationsContainer();
+            Main_OMF.bone_cont = new BoneContainer(bones, 4);
+            Main_OMF.FileName = "";
+
+            bs.DataSource = Main_OMF.AnimsParams;
+            lbxMotions.DataSource = bs;
+            lbxMotions.DisplayMember = "Name";
+
+            LabelStatusFile.Text = "untitled";
+            saveAsToolStripMenuItem.Enabled = true;
+            saveToolStripMenuItem.Enabled = true;
+            toolsToolStripMenuItem.Enabled = true;
+            showBonePartsToolStripMenuItem.Enabled = true;
+            return true;
+        }
+
+        private void SklImportClick(object sender, EventArgs e)
+        {
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Filter = "Skls file|*.skls|Skl file|*.skl";
+                dialog.Title = "Load motions from an SDK file";
+                dialog.Multiselect = true;
+                if (dialog.ShowDialog() != DialogResult.OK)
+                    return;
+
+                int added = 0, replaced = 0, skipped = 0;
+                foreach (string path in dialog.FileNames)
+                    ImportSklFile(path, ref added, ref replaced, ref skipped);
+
+                if (added + replaced == 0 && skipped == 0)
+                    return;
+
+                Main_OMF.RecalcAllAnimIndex();
+                Main_OMF.RecalcAnimNum();
+                UpdateList();
+                RequestViewportUpdate(true);
+
+                string report = added + " motion(s) added";
+                if (replaced != 0)
+                    report += ", " + replaced + " replaced";
+                if (skipped != 0)
+                    report += ", " + skipped + " skipped";
+                MessageBox.Show(report, "Load/add from skl/skls", MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+        }
+
+        private void ImportSklFile(string path, ref int added, ref int replaced, ref int skipped)
+        {
+            int count;
+            try
+            {
+                count = SklOpen(path);
+            }
+            catch (DllNotFoundException)
+            {
+                MessageBox.Show("Can't find converter.dll", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                MessageBox.Show("converter.dll is too old for this: it has no skl reader.",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            if (count <= 0)
+            {
+                MessageBox.Show("Can't read " + Path.GetFileName(path) + ":\n" + SklLastError(),
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                SklClose();
+                return;
+            }
+
+            try
+            {
+                // with nothing open, the file itself supplies the skeleton
+                if (Main_OMF == null && !StartOmfFromSkl())
+                    return;
+
+                string bones = string.Join("\n", OmfBoneNames().ToArray());
+                bool? overwriteAll = chbxAskForOverwrite.Checked ? (bool?)null : true;
+
+                StringBuilder buffer = new StringBuilder(512);
+                for (int i = 0; i != count; ++i)
+                {
+                    buffer.Length = 0;
+                    SklGetName(i, buffer, buffer.Capacity);
+                    string name = buffer.ToString();
+                    if (name.Length == 0)
+                        continue;
+
+                    int existing = Main_OMF.AnimsParams.FindIndex(delegate(AnimationParams p)
+                    {
+                        return p.Name == name;
+                    });
+
+                    if (existing >= 0)
+                    {
+                        if (overwriteAll == null)
+                        {
+                            DialogResult answer = MessageBox.Show(
+                                "Motion \"" + name + "\" is already there. Overwrite it?\n\n" +
+                                "No overwrites the rest as well when you answer for all.",
+                                "Load/add from skl/skls", MessageBoxButtons.YesNoCancel,
+                                MessageBoxIcon.Question);
+                            if (answer == DialogResult.Cancel)
+                                return;
+                            overwriteAll = answer == DialogResult.Yes;
+                        }
+                        if (!overwriteAll.Value)
+                        {
+                            ++skipped;
+                            continue;
+                        }
+                    }
+
+                    float speed, accrue, falloff, power;
+                    int flags, boneOrPart, frames;
+                    if (SklGetParams(i, out speed, out accrue, out falloff, out power,
+                            out flags, out boneOrPart, out frames) != 0)
+                    {
+                        ++skipped;
+                        continue;
+                    }
+
+                    int size = SklGetData(i, bones, null, 0);
+                    if (size <= 0)
+                    {
+                        ++skipped;
+                        continue;
+                    }
+
+                    byte[] data = new byte[size];
+                    if (SklGetData(i, bones, data, size) != size)
+                    {
+                        ++skipped;
+                        continue;
+                    }
+
+                    AnimVector vector = new AnimVector();
+                    vector.Name = name;
+                    vector.data = data;
+                    vector.RecalcSectionSize();
+
+                    AnimationParams param = new AnimationParams();
+                    param.Name = name;
+                    param.Flags = flags;
+                    param.BoneOrPart = (short)boneOrPart;
+                    param.Speed = speed;
+                    param.Power = power;
+                    param.Accrue = accrue;
+                    param.Falloff = falloff;
+                    param.MarksCount = 0;
+                    param.m_marks = null;
+
+                    if (existing >= 0)
+                    {
+                        Main_OMF.Anims[existing] = vector;
+                        Main_OMF.AnimsParams[existing] = param;
+                        ++replaced;
+                    }
+                    else
+                    {
+                        Main_OMF.AddAnim(vector);
+                        Main_OMF.AddAnimParams(param);
+                        ++added;
+                    }
+                }
+            }
+            finally
+            {
+                SklClose();
+            }
+        }
+    }
+}

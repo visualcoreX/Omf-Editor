@@ -221,6 +221,7 @@
     <ClInclude Include="..\ogf_tools.h" />
     <ClInclude Include="..\batch_helper.h" />
     <ClInclude Include="..\converter.h" />
+    <ClInclude Include="..\gltf_export.h" />
     <ClInclude Include="..\tools_base.h" />
     <ClInclude Include="..\xr_aabb.h" />
     <ClInclude Include="..\xr_bone.h" />
@@ -279,6 +280,9 @@
     <ClCompile Include="..\ogf_tools.cxx" />
     <ClCompile Include="..\batch_helper.cxx" />
     <ClCompile Include="..\converter.cxx" />
+    <ClCompile Include="..\gltf_export.cxx" />
+    <ClCompile Include="..\viewport_api.cxx" />
+    <ClCompile Include="..\skl_import.cxx" />
     <ClCompile Include="..\xr_bone.cxx" />
     <ClCompile Include="..\xr_build_err.cxx" />
     <ClCompile Include="..\xr_clsid.cxx" />

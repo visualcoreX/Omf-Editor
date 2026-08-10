@@ -82,6 +82,10 @@
       <DependentUpon>BonePartsWindow.cs</DependentUpon>
     </Compile>
     <Compile Include="Common.cs" />
+    <Compile Include="DdsImage.cs" />
+    <Compile Include="FolderPicker.cs" />
+    <Compile Include="RecentFiles.cs" />
+    <Compile Include="SklImport.cs" />
     <Compile Include="Editor.cs" />
     <Compile Include="OMF_Editor.cs">
       <SubType>Form</SubType>
@@ -104,6 +108,9 @@
     </Compile>
     <Compile Include="OMF.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="Viewport.cs">
+      <DependentUpon>OMF_Editor.cs</DependentUpon>
+    </Compile>
     <Compile Include="RenameBones.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -165,4 +172,7 @@
     <Service Include="{508349B6-6B84-4DF5-91F0-309BEEBAD82D}" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PostBuildEvent>xcopy /y /d "$(SolutionDir)SDK\binaries\f3d.exe" "$(TargetDir)"</PostBuildEvent>
+  </PropertyGroup>
 </Project>

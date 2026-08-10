@@ -135,6 +135,15 @@ namespace OMF_Editor
             return bone_cont.OGF_V;
         }
 
+        // An empty container, for motions coming from somewhere other than an
+        // OMF file. The chunk ids are the ones every OMF is built of.
+        public AnimationsContainer()
+        {
+            SectionId = 14;		// motions
+            SectionId2 = 0;		// their count
+            SectionSize2 = 4;
+        }
+
         public AnimationsContainer(BinaryReader reader, OMFEditor editor)
         {
             SectionId = reader.ReadInt32();
@@ -268,6 +277,26 @@ namespace OMF_Editor
 
         public List<BoneParts> parts = new List<BoneParts>();
 
+        // Bones of a skeleton that came from outside an OMF, as a single part.
+        public BoneContainer(IList<string> boneNames, short motionVersion)
+        {
+            SectionId = 15;		// motion parameters
+            OGF_V = motionVersion;
+            Count = 1;
+
+            BoneParts part = new BoneParts();
+            part.Name = "default";
+            part.Count = (short)boneNames.Count;
+            for (int i = 0; i != boneNames.Count; ++i)
+            {
+                BoneVector bone = new BoneVector();
+                bone.Name = boneNames[i];
+                bone.ID = (uint)i;
+                part.bones.Add(bone);
+            }
+            parts.Add(part);
+        }
+
         public BoneContainer(BinaryReader reader, OMFEditor editor)
         {
             SectionId = reader.ReadInt32();
@@ -386,6 +415,17 @@ namespace OMF_Editor
         public int MarksCount { get; set; }
 
         public List<MotionMark> m_marks; // = new List<MotionMark>();
+
+        // Defaults matching what the SDK gives a fresh motion.
+        public AnimationParams()
+        {
+            Name = "";
+            BoneOrPart = -1;	// all partitions
+            Speed = 1.0f;
+            Power = 1.0f;
+            Accrue = 2.0f;
+            Falloff = 2.0f;
+        }
 
         public AnimationParams(BinaryReader reader, OMFEditor editor, short motion_version)
         {

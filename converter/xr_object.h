@@ -6,13 +6,17 @@
 
 #include <string>
 #include <vector>
-#ifdef _MSC_VER
+// stdext::hash_map is gone from the MSVC STL since VS2022 17.10, and it never
+// gave us anything std::map can't do here (xr_raw_surface is ordered anyway).
+#if defined(_MSC_VER) && _MSC_VER < 1930
 #if _MSC_VER >= 1900
 #define _SILENCE_STDEXT_HASH_DEPRECATION_WARNINGS
 #endif
 #include <hash_map>
+#define XR_RAW_SURFACE_MAP stdext::hash_map
 #else
 #include <map>
+#define XR_RAW_SURFACE_MAP std::map
 #endif
 #include "xr_bone.h"
 #include "xr_skl_motion.h"
@@ -36,7 +40,7 @@ enum {
 class xr_reader;
 class xr_writer;
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && _MSC_VER < 1930
 inline size_t hash_value(const xr_raw_surface& surface)
 {
 #if SIZE_MAX == _UI64_MAX
@@ -131,11 +135,7 @@ protected:
 
 	const xr_surface_factory*
 				m_surface_factory;
-#ifdef _MSC_VER
-	stdext::hash_map<xr_raw_surface, xr_surface*>
-#else
-	std::map<xr_raw_surface, xr_surface*>
-#endif
+	XR_RAW_SURFACE_MAP<xr_raw_surface, xr_surface*>
 				m_raw_surfaces;
 };
 
