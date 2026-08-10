@@ -189,6 +189,9 @@ namespace OMF_Editor
                 if (Main_OMF == null && !StartOmfFromSkl())
                     return;
 
+                // Bones of an OMF that keeps its parts as bare ids come out
+                // nameless. They are passed on as they are - the reader takes an
+                // empty name to mean the bone in that place of the motion.
                 string bones = string.Join("\n", OmfBoneNames().ToArray());
                 bool? overwriteAll = chbxAskForOverwrite.Checked ? (bool?)null : true;
 

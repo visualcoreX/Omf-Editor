@@ -51,12 +51,15 @@ int copy_string(const std::string& value, char* buffer, int size)
 	return n;
 }
 
-void split_names(const char* text, std::vector<std::string>& out)
+// With keep_empty the split is positional: one entry per separator, empty ones
+// included. Bones of an OMF that holds them as bare ids arrive that way, and
+// dropping them would shift every stream that follows.
+void split_names(const char* text, std::vector<std::string>& out, bool keep_empty = false)
 {
 	std::string current;
 	for (const char* p = text; ; ++p) {
 		if (*p == '\n' || *p == '\0') {
-			if (!current.empty())
+			if (keep_empty || !current.empty())
 				out.push_back(current);
 			current.clear();
 			if (*p == '\0')
@@ -65,6 +68,14 @@ void split_names(const char* text, std::vector<std::string>& out)
 			current += *p;
 		}
 	}
+}
+
+// The bone in a given place of the motion, for bones that have no name to be
+// looked up by. Their id is that place.
+const xr_bone_motion* bone_motion_at(const xr_skl_motion& motion, size_t index)
+{
+	const xr_bone_motion_vec& bone_motions = motion.bone_motions();
+	return index < bone_motions.size() ? bone_motions[index] : 0;
 }
 
 // ---- writing -----------------------------------------------------------
@@ -372,8 +383,8 @@ _declspec(dllexport) int SklGetData(int index, const char* bone_names, unsigned 
 		return SKL_BAD_ARGUMENT;
 
 	std::vector<std::string> bones;
-	split_names(bone_names, bones);
-	if (bones.empty()) {
+	split_names(bone_names, bones, true);
+	if (bones.empty() || (bones.size() == 1 && bones[0].empty())) {
 		g_skl_error = "no bones given";
 		return SKL_NO_BONES;
 	}
@@ -385,8 +396,11 @@ _declspec(dllexport) int SklGetData(int index, const char* bone_names, unsigned 
 
 	blob out;
 	out.u32(uint32_t(num_frames));
-	for (size_t i = 0; i != bones.size(); ++i)
-		write_bone_motion(out, find_bone_motion(*motion, bones[i]), num_frames);
+	for (size_t i = 0; i != bones.size(); ++i) {
+		const xr_bone_motion* bm = bones[i].empty() ?
+				bone_motion_at(*motion, i) : find_bone_motion(*motion, bones[i]);
+		write_bone_motion(out, bm, num_frames);
+	}
 
 	int needed = int(out.bytes.size());
 	if (buffer == 0 || size < needed || needed == 0)
