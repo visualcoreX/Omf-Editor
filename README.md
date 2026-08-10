@@ -1,5 +1,3 @@
-Forked From: https://github.com/mortany/omf_editor
-
 ## Viewport
 
 `Viewport -> Show viewport` opens a 3D preview on the right side of the window.
