@@ -38,15 +38,22 @@ f3d is not part of the repository: `SDK` is ignored by git. Without it the
 editor still builds and runs, and only the viewport says it cannot find
 `f3d.exe`.
 
-To have the viewport work, put an f3d distribution in either place:
+Take a **nightly** build rather than a release, from the rolling
+[nightly tag](https://github.com/f3d-app/f3d/releases/tag/nightly) of
+[f3d-app/f3d](https://github.com/f3d-app/f3d). The asset to grab is the plain
+Windows archive, `F3D-<version>-Windows-x86_64.zip` - not the `-raytracing`
+one, which is bigger for nothing here, and not the `.exe` installer. The
+editor is developed against `3.5.0-240-g5e87d7ad`.
+
+Two things the editor leans on exist only in a nightly: the draggable time bar
+(`--animation-progress=advanced`), which is the scrubber of the viewport, and
+reacting to the Space key the editor forwards to it. The 3.5.0 release ignores
+posted key messages entirely.
+
+The archive holds `bin` and `share`. Put that pair in either place:
 
 - `f3d\bin\f3d.exe` next to the built `OMF_Editor.exe`
 - `SDK\f3d\bin\f3d.exe` anywhere above it, which is what a source tree does
-
-Take a **nightly** build rather than a release. Two things the editor leans on
-exist only there: the draggable time bar (`--animation-progress=advanced`),
-which is the scrubber of the viewport, and reacting to the Space key the editor
-forwards to it.
 
 ### Packaging a release
 
