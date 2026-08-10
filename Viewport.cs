@@ -96,6 +96,7 @@ namespace OMF_Editor
 
         private Panel viewportPanel;
         private Panel viewportHost;
+        private Button viewportAppendButton;
         private ToolStrip viewportToolStrip;
         private StatusStrip viewportStatusStrip;
         private ToolStripStatusLabel viewportStatusLabel;
@@ -245,6 +246,19 @@ namespace OMF_Editor
             viewportHost.BackColor = System.Drawing.Color.FromArgb(51, 51, 51);
             viewportHost.Resize += ViewportOnHostResize;
 
+            // nothing to show until a model is picked, so the empty viewport is
+            // the invitation to pick one
+            viewportAppendButton = new Button();
+            viewportAppendButton.Dock = DockStyle.Fill;
+            viewportAppendButton.Text = "Append OGF";
+            viewportAppendButton.FlatStyle = FlatStyle.Flat;
+            viewportAppendButton.BackColor = viewportHost.BackColor;
+            viewportAppendButton.ForeColor = System.Drawing.Color.Gainsboro;
+            viewportAppendButton.FlatAppearance.BorderSize = 0;
+            viewportAppendButton.Font = new System.Drawing.Font(this.Font.FontFamily, 12F);
+            viewportAppendButton.Click += ViewportLoadModelClick;
+            viewportHost.Controls.Add(viewportAppendButton);
+
             viewportPanel.Controls.Add(viewportHost);
             viewportPanel.Controls.Add(viewportStatusStrip);
             viewportPanel.Controls.Add(viewportToolStrip);
@@ -355,9 +369,15 @@ namespace OMF_Editor
                 LayoutViewport();
 
                 if (!string.IsNullOrEmpty(viewportModelPath) && File.Exists(viewportModelPath))
+                {
                     LoadViewportModel(viewportModelPath, false);
+                }
                 else
+                {
+                    viewportModelPath = "";		// a path that no longer exists is no model
                     viewportStatusLabel.Text = "No model";
+                }
+                UpdateViewportAppendButton();
 
                 RequestViewportUpdate(true);
             }
@@ -636,6 +656,7 @@ namespace OMF_Editor
             {
                 viewportModelPath = "";
                 viewportStatusLabel.Text = "No model";
+                UpdateViewportAppendButton();
                 if (report)
                     MessageBox.Show("Can't load the model:\n" + ViewportLastError(), "Error",
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -646,7 +667,16 @@ namespace OMF_Editor
             viewportSettings.Write("ViewportModel", path);
             viewportStatusLabel.Text = Path.GetFileName(path) + " (" + ViewportGetModelBoneCount() + " bones)";
             ResolveViewportTextures();
+            UpdateViewportAppendButton();
             return true;
+        }
+
+        // The invitation covers the viewport for exactly as long as there is no
+        // model to draw in it.
+        private void UpdateViewportAppendButton()
+        {
+            if (viewportAppendButton != null)
+                viewportAppendButton.Visible = string.IsNullOrEmpty(viewportModelPath);
         }
 
         // ---- textures --------------------------------------------------------
