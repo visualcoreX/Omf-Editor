@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -31,6 +32,15 @@ namespace OMF_Editor
 
         [DllImport("converter.dll")]
         private static extern void SklClose();
+
+        [DllImport("converter.dll")]
+        private static extern int SklGetMarkCount(int index);
+
+        [DllImport("converter.dll", CharSet = CharSet.Ansi)]
+        private static extern int SklGetMarkName(int index, int mark, StringBuilder buffer, int size);
+
+        [DllImport("converter.dll")]
+        private static extern int SklGetMarkIntervals(int index, int mark, float[] buffer, int size);
 
         [DllImport("converter.dll")]
         private static extern int SklGetBoneCount();
@@ -72,12 +82,146 @@ namespace OMF_Editor
             return names;
         }
 
+        // The marks of one motion of the loaded SDK file. They live in it the
+        // same as in an OMF, so a motion that goes out to .skls and comes back
+        // keeps them. Returns null for a motion that has none, and for a
+        // converter.dll too old to be asked.
+        private List<MotionMark> SklMotionMarks(int index)
+        {
+            int count;
+            try
+            {
+                count = SklGetMarkCount(index);
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return null;
+            }
+            if (count <= 0)
+                return null;
+
+            List<MotionMark> marks = new List<MotionMark>();
+            StringBuilder buffer = new StringBuilder(512);
+            for (int m = 0; m != count; ++m)
+            {
+                buffer.Length = 0;
+                SklGetMarkName(index, m, buffer, buffer.Capacity);
+
+                MotionMark mark = new MotionMark();
+                mark.Name = buffer.ToString();
+
+                int intervals = SklGetMarkIntervals(index, m, null, 0);
+                if (intervals > 0)
+                {
+                    float[] values = new float[intervals*2];
+                    if (SklGetMarkIntervals(index, m, values, intervals) == intervals)
+                    {
+                        for (int k = 0; k != intervals; ++k)
+                        {
+                            MotionMarkParams param = new MotionMarkParams();
+                            param.t0 = values[k*2];
+                            param.t1 = values[k*2 + 1];
+                            mark.m_params.Add(param);
+                        }
+                    }
+                }
+                mark.Count = mark.m_params.Count;
+                marks.Add(mark);
+            }
+            return marks;
+        }
+
         private static string SklLastError()
         {
             StringBuilder buffer = new StringBuilder(1024);
             SklGetLastError(buffer, buffer.Capacity);
             string text = buffer.ToString();
             return text.Length > 0 ? text : "unknown error";
+        }
+
+        // ---- bone parts alongside an SDK file --------------------------------
+        // A .skl/.skls holds motions and nothing else: the bone parts an OMF is
+        // split into have no place in it. So they are written beside the export
+        // and picked up again on the way back, which keeps a round trip whole.
+        // A file without this companion loads as it always did, one part.
+
+        public static string BonePartsSidecar(string sklPath)
+        {
+            return sklPath + ".parts";
+        }
+
+        public static void WriteBonePartsSidecar(string sklPath, BoneContainer bones)
+        {
+            try
+            {
+                if (bones == null || bones.parts.Count < 2)
+                    return;		// one part is what an import makes anyway
+
+                StringBuilder text = new StringBuilder();
+                text.AppendLine("# bone parts of the OMF this file came from, for OMF Editor");
+                foreach (BoneParts part in bones.parts)
+                {
+                    List<string> ids = new List<string>();
+                    foreach (BoneVector bone in part.bones)
+                        ids.Add(bone.ID.ToString());
+                    text.AppendLine(part.Name + "=" + string.Join(",", ids.ToArray()));
+                }
+                File.WriteAllText(BonePartsSidecar(sklPath), text.ToString());
+            }
+            catch (Exception exp)
+            {
+                Debug.WriteLine("bone parts sidecar: " + exp.Message);
+            }
+        }
+
+        // Puts the parts back into a skeleton just built from an SDK file. Left
+        // alone when there is no companion file, or when it does not describe
+        // this skeleton.
+        private static void ApplyBonePartsSidecar(string sklPath, BoneContainer bones, IList<string> boneNames)
+        {
+            string sidecar = BonePartsSidecar(sklPath);
+            if (!File.Exists(sidecar))
+                return;
+
+            try
+            {
+                List<BoneParts> parts = new List<BoneParts>();
+                foreach (string line in File.ReadAllLines(sidecar))
+                {
+                    string text = line.Trim();
+                    if (text.Length == 0 || text[0] == '#')
+                        continue;
+                    int split = text.IndexOf('=');
+                    if (split <= 0)
+                        continue;
+
+                    BoneParts part = new BoneParts();
+                    part.Name = text.Substring(0, split);
+                    foreach (string id in text.Substring(split + 1).Split(','))
+                    {
+                        uint value;
+                        if (!uint.TryParse(id.Trim(), out value) || value >= boneNames.Count)
+                            return;		// not this skeleton - leave the one part alone
+                        BoneVector bone = new BoneVector();
+                        bone.Name = boneNames[(int)value];
+                        bone.ID = value;
+                        part.bones.Add(bone);
+                    }
+                    part.Count = (short)part.bones.Count;
+                    parts.Add(part);
+                }
+
+                if (parts.Count < 2)
+                    return;
+
+                bones.parts.Clear();
+                bones.parts.AddRange(parts);
+                bones.Count = (short)parts.Count;
+            }
+            catch (Exception exp)
+            {
+                Debug.WriteLine("bone parts sidecar: " + exp.Message);
+            }
         }
 
         // The bones the loaded SDK file was made for. Used to start an OMF from
@@ -97,7 +241,7 @@ namespace OMF_Editor
         }
 
         // Builds an OMF around the motions just read, with their own skeleton.
-        private bool StartOmfFromSkl()
+        private bool StartOmfFromSkl(string sklPath)
         {
             List<string> bones = SklBoneNames();
             if (bones.Count == 0)
@@ -109,6 +253,7 @@ namespace OMF_Editor
 
             Main_OMF = new AnimationsContainer();
             Main_OMF.bone_cont = new BoneContainer(bones, 4);
+            ApplyBonePartsSidecar(sklPath, Main_OMF.bone_cont, bones);
             Main_OMF.FileName = "";
 
             bs.DataSource = Main_OMF.AnimsParams;
@@ -186,7 +331,7 @@ namespace OMF_Editor
             try
             {
                 // with nothing open, the file itself supplies the skeleton
-                if (Main_OMF == null && !StartOmfFromSkl())
+                if (Main_OMF == null && !StartOmfFromSkl(path))
                     return;
 
                 // Bones of an OMF that keeps its parts as bare ids come out
@@ -265,8 +410,8 @@ namespace OMF_Editor
                     param.Power = power;
                     param.Accrue = accrue;
                     param.Falloff = falloff;
-                    param.MarksCount = 0;
-                    param.m_marks = null;
+                    param.m_marks = SklMotionMarks(i);
+                    param.MarksCount = param.m_marks != null ? param.m_marks.Count : 0;
 
                     if (existing >= 0)
                     {

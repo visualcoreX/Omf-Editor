@@ -410,6 +410,48 @@ _declspec(dllexport) int SklGetData(int index, const char* bone_names, unsigned 
 	return needed;
 }
 
+// ---- motion marks ------------------------------------------------------
+// An SDK file keeps them (version 7 of a motion is version 6 plus these), so
+// they survive a trip through .skls as long as the editor asks for them.
+
+_declspec(dllexport) int SklGetMarkCount(int index)
+{
+	if (index < 0 || index >= int(g_motions.size()))
+		return SKL_UNKNOWN_MOTION;
+	return int(g_motions[size_t(index)]->marks().size());
+}
+
+_declspec(dllexport) int SklGetMarkName(int index, int mark, char* buffer, int size)
+{
+	if (index < 0 || index >= int(g_motions.size()))
+		return copy_string(std::string(), buffer, size);
+	const xr_motion_marks_vec& marks = g_motions[size_t(index)]->marks();
+	if (mark < 0 || mark >= int(marks.size()) || marks[size_t(mark)] == 0)
+		return copy_string(std::string(), buffer, size);
+	return copy_string(marks[size_t(mark)]->name(), buffer, size);
+}
+
+// The intervals of one mark, as pairs of floats: t0, t1, t0, t1... Returns the
+// number of pairs, or the number needed when the buffer is too small.
+_declspec(dllexport) int SklGetMarkIntervals(int index, int mark, float* buffer, int size)
+{
+	if (index < 0 || index >= int(g_motions.size()))
+		return SKL_UNKNOWN_MOTION;
+	const xr_motion_marks_vec& marks = g_motions[size_t(index)]->marks();
+	if (mark < 0 || mark >= int(marks.size()) || marks[size_t(mark)] == 0)
+		return SKL_BAD_ARGUMENT;
+
+	const xr_motion_marks& mm = *marks[size_t(mark)];
+	int needed = int(mm.size());
+	if (buffer == 0 || size < needed)
+		return needed;
+	for (int i = 0; i != needed; ++i) {
+		buffer[i*2] = mm[size_t(i)].t0;
+		buffer[i*2 + 1] = mm[size_t(i)].t1;
+	}
+	return needed;
+}
+
 _declspec(dllexport) void SklClose()
 {
 	clear_motions();

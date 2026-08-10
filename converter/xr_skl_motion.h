@@ -55,9 +55,13 @@ public:
 	void		load(xr_reader& r);
 	void		save(xr_writer& w) const;
 
+	const std::string&	name() const;
+
 protected:
 	std::string	m_name;
 };
+
+inline const std::string& xr_motion_marks::name() const { return m_name; }
 
 TYPEDEF_STD_VECTOR_PTR(xr_motion_marks)
 
@@ -89,6 +93,8 @@ public:
 	uint16_t	bone_or_part() const;
 
 		int		marks_size();
+
+	const xr_motion_marks_vec&	marks() const;
 
 	uint8_t		bone_motion_flags(uint16_t bone_id) const;
 
@@ -148,6 +154,10 @@ inline float xr_skl_motion::speed() const { return m_speed; }
 inline int xr_skl_motion::marks_size()
 {
 	return m_marks.size();
+}
+inline const xr_motion_marks_vec& xr_skl_motion::marks() const
+{
+	return m_marks;
 }
 
 } // end of namespace xray_re

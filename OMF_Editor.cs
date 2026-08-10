@@ -532,6 +532,7 @@ namespace OMF_Editor
                 SaveOMF(TempOMF, temp_omf_name);
 
                 RunConverter(temp_omf_name, (sender as SaveFileDialog).FileName, 1, (format == ".skl" ? 0 : 1), "");
+                WriteBonePartsSidecar((sender as SaveFileDialog).FileName, Main_OMF.bone_cont);
 
                 if (File.Exists(temp_omf_name))
                 {
@@ -587,6 +588,7 @@ namespace OMF_Editor
                 SaveOMF(SelectedAnims, temp_omf_name);
 
                 RunConverter(temp_omf_name, (sender as SaveFileDialog).FileName, 1, (format == ".skl" ? 0 : 1), motion_list);
+                WriteBonePartsSidecar((sender as SaveFileDialog).FileName, Main_OMF.bone_cont);
 
                 if (File.Exists(temp_omf_name))
                 {
