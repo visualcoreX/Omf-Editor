@@ -257,6 +257,11 @@ namespace OMF_Editor
         public short OGF_V;
         public short Count;
 
+        // Some OMFs carry the bones of their partitions as bare ids, with no
+        // names at all. Such a file has to be written back the same way, or it
+        // would not read as either kind.
+        public bool NamelessBones;
+
         public int Size()
         {
             int new_size = 0;
@@ -267,7 +272,8 @@ namespace OMF_Editor
 
                 foreach (BoneVector bone in bonesparts.bones)
                 {
-                    new_size += bone.Name.Length + 1;
+                    if (!NamelessBones)
+                        new_size += bone.Name.Length + 1;
                     new_size += 4;
                 }
             }
@@ -314,11 +320,19 @@ namespace OMF_Editor
 
                 for (int n = 0; n < bonesparts.Count; n++)
                 {
-                    BoneVector sbone = new BoneVector
+                    BoneVector sbone = new BoneVector();
+                    sbone.Name = NamelessBones ? "" : editor.ReadSuperString(reader);
+
+                    // A name that comes out empty is the first id of a file that
+                    // holds no names: the zero taken for a terminator is that
+                    // id's own first byte, so it has to be given back.
+                    if (sbone.Name.Length == 0 && !NamelessBones)
                     {
-                        Name = editor.ReadSuperString(reader),
-                        ID = reader.ReadUInt32()
-                    };
+                        reader.BaseStream.Position -= 1;
+                        NamelessBones = true;
+                    }
+
+                    sbone.ID = reader.ReadUInt32();
                     bonesparts.bones.Add(sbone);
                 }
 
@@ -340,7 +354,8 @@ namespace OMF_Editor
 
                 foreach (BoneVector sbone in bone.bones)
                 {
-                    editor.WriteSuperString(writer, sbone.Name);
+                    if (!NamelessBones)
+                        editor.WriteSuperString(writer, sbone.Name);
                     writer.Write(sbone.ID);
                 }
             }
