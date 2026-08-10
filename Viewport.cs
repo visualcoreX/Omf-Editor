@@ -251,10 +251,9 @@ namespace OMF_Editor
             viewportAppendButton = new Button();
             viewportAppendButton.Dock = DockStyle.Fill;
             viewportAppendButton.Text = "Append OGF";
-            viewportAppendButton.FlatStyle = FlatStyle.Flat;
-            viewportAppendButton.BackColor = viewportHost.BackColor;
-            viewportAppendButton.ForeColor = System.Drawing.Color.Gainsboro;
-            viewportAppendButton.FlatAppearance.BorderSize = 0;
+            // the ordinary themed button of the Append OMF tab: light face, dark
+            // text, rather than something that melts into the dark viewport
+            viewportAppendButton.UseVisualStyleBackColor = true;
             viewportAppendButton.Font = new System.Drawing.Font(this.Font.FontFamily, 12F);
             viewportAppendButton.Click += ViewportLoadModelClick;
             viewportHost.Controls.Add(viewportAppendButton);
@@ -287,7 +286,7 @@ namespace OMF_Editor
             viewportMenu.DropDownItems.Add(viewportTearOnItem);
 
             viewportTexturesItem = new ToolStripMenuItem("Gamedata folder...");
-            viewportTexturesItem.ToolTipText = "the gamedata of the mod the model belongs to, textures are taken from its textures folder";
+            viewportTexturesItem.ToolTipText = "the gamedata of the mod the model belongs to, textures are taken from its textures folder\nset by itself for a model opened from inside a gamedata folder";
             viewportTexturesItem.Click += ViewportTexturesClick;
             viewportMenu.DropDownItems.Add(viewportTexturesItem);
 
@@ -314,7 +313,9 @@ namespace OMF_Editor
                 viewportTexturesPath = viewportSettings.Read("ViewportTextures");	// picked before gamedata was asked for
             viewportAutoPlayItem.Checked = ViewportReadInt("ViewportAutoPlay", 1) != 0;
 
-            if (ViewportReadInt("ViewportEnabled", 0) != 0)
+            // on by default: the viewport is the point of the editor now, and it
+            // still costs nothing until a model is loaded into it
+            if (ViewportReadInt("ViewportEnabled", 1) != 0)
             {
                 viewportShowItem.Checked = true;
                 EnableViewport(true);
@@ -666,6 +667,7 @@ namespace OMF_Editor
             viewportModelPath = path;
             viewportSettings.Write("ViewportModel", path);
             viewportStatusLabel.Text = Path.GetFileName(path) + " (" + ViewportGetModelBoneCount() + " bones)";
+            AdoptGamedataOf(path);
             ResolveViewportTextures();
             UpdateViewportAppendButton();
             return true;
@@ -696,6 +698,42 @@ namespace OMF_Editor
                 ResolveViewportTextures();
                 RequestViewportUpdate(true);
             }
+        }
+
+        // The gamedata a model belongs to: the nearest folder named gamedata
+        // above it that holds a textures folder of its own. A mod that ships
+        // meshes only is skipped, so the gamedata picked by hand for it stays.
+        private static string FindGamedataRoot(string modelPath)
+        {
+            try
+            {
+                DirectoryInfo dir = Directory.GetParent(Path.GetFullPath(modelPath));
+                while (dir != null)
+                {
+                    if (string.Equals(dir.Name, "gamedata", StringComparison.OrdinalIgnoreCase)
+                        && Directory.Exists(Path.Combine(dir.FullName, "textures")))
+                        return dir.FullName;
+                    dir = dir.Parent;
+                }
+            }
+            catch (Exception exp)
+            {
+                Debug.WriteLine(exp.ToString());
+            }
+            return null;
+        }
+
+        // A model opened from inside a gamedata tree already says where its
+        // textures are, so the folder only has to be picked by hand for models
+        // kept somewhere else.
+        private void AdoptGamedataOf(string modelPath)
+        {
+            string gamedata = FindGamedataRoot(modelPath);
+            if (gamedata == null || string.Equals(gamedata, viewportTexturesPath, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            viewportTexturesPath = gamedata;
+            viewportSettings.Write("ViewportGamedata", gamedata);
         }
 
         // Converts every texture the model asks for into a png the viewer can
@@ -1141,6 +1179,10 @@ namespace OMF_Editor
             {
                 if (!viewerProcess.HasExited)
                     viewerProcess.Kill();
+                // Kill only asks for the end, it does not wait for it, and until
+                // the viewer is really gone it still holds the preview open - the
+                // cleanup that follows would then leave the file behind
+                viewerProcess.WaitForExit(3000);
                 viewerProcess.Close();
             }
             catch (Exception) { }
