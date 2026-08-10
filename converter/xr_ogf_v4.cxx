@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <exception>
 #include "xr_ogf_v4.h"
 #include "xr_file_system.h"
 #include "xr_utils.h"
@@ -356,6 +357,13 @@ void xr_ogf_v4::load_s_motions(xr_reader& r)
 
 		const char* name = r.skip_sz();
 		motion_io* smotion = static_cast<motion_io*>(find_motion(name));
+		if (smotion == 0 && id <= m_motions.size()) {
+			// Files exist whose motion chunks carry damaged names while their
+			// parameters are intact - the editor has a repair of its own for
+			// them. The chunk id is the place in the list, so it says which
+			// motion this data belongs to.
+			smotion = static_cast<motion_io*>(m_motions[id - 1]);
+		}
 		if (smotion == 0) {
 			msg("unknown motion %s", name);
 			throw xr_error();
@@ -449,9 +457,22 @@ void xr_ogf_v4::load_s_smparams(xr_reader& r)
 	assert(m_motions.empty());
 	size_t num_motions = r.r_u16();
 	m_motions.resize(num_motions);
-	for (; num_motions; --num_motions) {
+	for (size_t n = 0; n != num_motions; ++n) {
 		motion_io* smotion = new xr_ogf_v4::motion_io;
-		m_motions.at(smotion->import_params(r, version)) = smotion;
+		size_t id = smotion->import_params(r, version);
+		// The ids of some files do not line up with their own motion count
+		// - the editor carries a repair for exactly that. Rather than throw
+		// the file out, anything out of range or already taken is put in the
+		// first free place; the motions themselves are matched up by name.
+		if (id >= m_motions.size() || m_motions[id] != 0) {
+			size_t free_slot = 0;
+			while (free_slot < m_motions.size() && m_motions[free_slot] != 0)
+				++free_slot;
+			if (free_slot == m_motions.size())
+				m_motions.push_back(0);
+			id = free_slot;
+		}
+		m_motions[id] = smotion;
 	}
 	assert(std::find(m_motions.begin(), m_motions.end(), static_cast<xr_skl_motion*>(0)) == m_motions.end());
 
@@ -780,6 +801,18 @@ bool xr_ogf_v4::load_omf(const char* path)
 	try {
 		load_omf(*r);
 	} catch (xr_error) {
+		clear();
+		status = false;
+	} catch (const std::exception& e) {
+		// Whatever the standard library throws on a file that does not
+		// parse used to travel straight out of here, past the r_close
+		// below - and the reader holds the file open, so every later
+		// attempt to write it failed too.
+		msg("can't load %s: %s", path, e.what());
+		clear();
+		status = false;
+	} catch (...) {
+		msg("can't load %s: unknown error", path);
 		clear();
 		status = false;
 	}
