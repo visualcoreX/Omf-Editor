@@ -279,26 +279,33 @@ namespace OMF_Editor
                 if (dialog.ShowDialog() != DialogResult.OK)
                     return;
 
-                int added = 0, replaced = 0, skipped = 0;
-                foreach (string path in dialog.FileNames)
-                    ImportSklFile(path, ref added, ref replaced, ref skipped);
-
-                if (added + replaced == 0 && skipped == 0)
-                    return;
-
-                Main_OMF.RecalcAllAnimIndex();
-                Main_OMF.RecalcAnimNum();
-                UpdateList();
-                RequestViewportUpdate(true);
-
-                string report = added + " motion(s) added";
-                if (replaced != 0)
-                    report += ", " + replaced + " replaced";
-                if (skipped != 0)
-                    report += ", " + skipped + " skipped";
-                MessageBox.Show(report, "Load/add from skl/skls", MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                ImportSklFiles(dialog.FileNames);
             }
+        }
+
+        // The files of one import, whether they were picked in the dialog or
+        // dropped on the window.
+        private void ImportSklFiles(IList<string> paths)
+        {
+            int added = 0, replaced = 0, skipped = 0;
+            foreach (string path in paths)
+                ImportSklFile(path, ref added, ref replaced, ref skipped);
+
+            if (Main_OMF == null || (added + replaced == 0 && skipped == 0))
+                return;
+
+            Main_OMF.RecalcAllAnimIndex();
+            Main_OMF.RecalcAnimNum();
+            UpdateList();
+            RequestViewportUpdate(true);
+
+            string report = added + " motion(s) added";
+            if (replaced != 0)
+                report += ", " + replaced + " replaced";
+            if (skipped != 0)
+                report += ", " + skipped + " skipped";
+            MessageBox.Show(report, "Load/add from skl/skls", MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
         private void ImportSklFile(string path, ref int added, ref int replaced, ref int skipped)

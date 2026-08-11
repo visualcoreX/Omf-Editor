@@ -84,6 +84,7 @@
     <Compile Include="Common.cs" />
     <Compile Include="DdsImage.cs" />
     <Compile Include="FolderPicker.cs" />
+    <Compile Include="FileDrop.cs" />
     <Compile Include="RecentFiles.cs" />
     <Compile Include="SklImport.cs" />
     <Compile Include="Editor.cs" />

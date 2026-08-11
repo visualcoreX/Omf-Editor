@@ -50,6 +50,7 @@ namespace OMF_Editor
             InitViewport();
             InitRecentFiles();
             InitSklImport();
+            InitFileDrop();		// last: it walks the controls everything above made
 
             this.Opacity = 0;
 

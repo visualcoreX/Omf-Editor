@@ -21,6 +21,9 @@ namespace OMF_Editor
         // one, and enough of them per frame make the scrubber feel continuous
         const int ViewportFrameSteps = 100;
         const float MotionFps = 30.0f;
+        // how long an unused file is kept in the viewport cache, see
+        // PruneViewportTempFolder
+        const int ViewportCacheDays = 14;
 
         [DllImport("user32.dll")]
         private static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
@@ -39,6 +42,9 @@ namespace OMF_Editor
 
         [DllImport("user32.dll")]
         private static extern uint MapVirtualKey(uint code, uint type);
+
+        [DllImport("shell32.dll")]
+        private static extern void DragAcceptFiles(IntPtr hWnd, bool accept);
 
         const int GWL_STYLE = -16;
         const int WS_CAPTION = 0x00C00000;
@@ -92,11 +98,13 @@ namespace OMF_Editor
         private ToolStripMenuItem viewportTearOnItem;
         private bool viewportTornOff;
         private int viewportRestoreWidth;	// panel width to come back to
-        private bool viewportStoppingViewer;	// our own kill, not the user closing it
 
         private Panel viewportPanel;
         private Panel viewportHost;
         private Button viewportAppendButton;
+        private CheckBox viewportBlendingBox;
+        private ToolStripItem viewportBlendingItem;
+        private ToolStripItem viewportBlendingSeparator;
         private ToolStrip viewportToolStrip;
         private StatusStrip viewportStatusStrip;
         private ToolStripStatusLabel viewportStatusLabel;
@@ -189,6 +197,7 @@ namespace OMF_Editor
         {
             viewportSettings = new IniFile(Path.Combine(ViewportAppFolder, "OMF_Editor.ini"));
 
+            PruneViewportTempFolder();
             CreateViewportControls();
 
             this.Shown += ViewportOnFormShown;
@@ -227,6 +236,23 @@ namespace OMF_Editor
             viewportTearButton.Click += ViewportTearClick;
             viewportToolStrip.Items.Add(viewportTearButton);
 
+            viewportBlendingSeparator = new ToolStripSeparator();
+            viewportToolStrip.Items.Add(viewportBlendingSeparator);
+
+            // a real check box rather than a button that stays pressed: this one
+            // is a setting of the picture, not something to press
+            viewportBlendingBox = new CheckBox();
+            viewportBlendingBox.Text = "Alpha Blending (slower performance)";
+            viewportBlendingBox.AutoSize = true;
+            viewportBlendingBox.BackColor = System.Drawing.Color.Transparent;
+            viewportBlendingBox.CheckedChanged += ViewportBlendingChanged;
+            viewportBlendingItem = new ToolStripControlHost(viewportBlendingBox);
+            viewportBlendingItem.ToolTipText = "Blend overlapping translucent surfaces exactly, with dual depth peeling.\n" +
+                "It walks the geometry once per layer, so the frame rate pays for it.\n" +
+                "Off, transparency is approximated in a single pass and comes out slightly grainy.\n" +
+                "Changing it brings the viewer up again, which starts the camera over.";
+            viewportToolStrip.Items.Add(viewportBlendingItem);
+
             // scrubbing lives in the viewer itself: it draws a bar of its own
             // over the animation, and dragging that moves the model right away,
             // which no rebuild from here could match
@@ -236,10 +262,35 @@ namespace OMF_Editor
             viewportStatusStrip = new StatusStrip();
             viewportStatusStrip.Dock = DockStyle.Bottom;
             viewportStatusStrip.SizingGrip = false;
+            // the strip keeps 14 pixels on the right for a sizing grip whether
+            // it draws one or not, and that is a gap under anything put there
+            viewportStatusStrip.Padding = new Padding(1, 0, 1, 0);
             viewportStatusLabel = new ToolStripStatusLabel("No model");
             viewportStatusLabel.Spring = true;
             viewportStatusLabel.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             viewportStatusStrip.Items.Add(viewportStatusLabel);
+
+            // the viewer has a keyboard of its own and says so nowhere, so the
+            // way in is written down here, at the far end of its status line -
+            // as a plate rather than as more grey text, which is what the rest
+            // of the line is and would be read as the same kind of thing
+            ToolStripStatusLabel viewerKeysLabel = new ToolStripStatusLabel("H - viewer keys");
+            viewerKeysLabel.BackColor = System.Drawing.Color.FromArgb(214, 231, 255);
+            viewerKeysLabel.ForeColor = System.Drawing.Color.FromArgb(15, 40, 85);
+            viewerKeysLabel.Font = new System.Drawing.Font(viewportStatusStrip.Font, System.Drawing.FontStyle.Bold);
+            viewerKeysLabel.BorderSides = ToolStripStatusLabelBorderSides.All;
+            viewerKeysLabel.BorderStyle = Border3DStyle.Flat;
+            // laid out from the right edge inwards, which is also what keeps it
+            // whole: the springing label beside it takes what is left of the
+            // line, and would otherwise leave this one half drawn off the end
+            viewerKeysLabel.Alignment = ToolStripItemAlignment.Right;
+            viewerKeysLabel.Margin = new Padding(6, 2, 0, 2);
+            viewerKeysLabel.Padding = new Padding(7, 0, 7, 0);
+            viewerKeysLabel.ToolTipText =
+                "Click the picture, then press H: the viewer lists the keys it answers itself,\n" +
+                "and everything they turn on and off. Those keys are the viewer's own -\n" +
+                "it reads the letters that are typed, so they want a latin keyboard layout.";
+            viewportStatusStrip.Items.Add(viewerKeysLabel);
 
             viewportHost = new Panel();
             viewportHost.Dock = DockStyle.Fill;
@@ -312,6 +363,8 @@ namespace OMF_Editor
             if (string.IsNullOrEmpty(viewportTexturesPath))
                 viewportTexturesPath = viewportSettings.Read("ViewportTextures");	// picked before gamedata was asked for
             viewportAutoPlayItem.Checked = ViewportReadInt("ViewportAutoPlay", 1) != 0;
+            // off by default: see the blending argument in StartViewer
+            viewportBlendingBox.Checked = ViewportReadInt("ViewportAlphaBlending", 0) != 0;
 
             // on by default: the viewport is the point of the editor now, and it
             // still costs nothing until a model is loaded into it
@@ -488,6 +541,7 @@ namespace OMF_Editor
             catch (Exception) { }
         }
 
+
         // ---- tearing the viewer off ------------------------------------------
 
         private void ViewportTearClick(object sender, EventArgs e)
@@ -588,21 +642,35 @@ namespace OMF_Editor
             StopViewer();
             try { ViewportReset(); }
             catch (Exception) { }
-
-            CleanViewportTempFolder();
         }
 
-        // Nothing in there outlives the editor: the preview, the OMF dumped for
-        // it and the converted textures are all rebuilt on demand next time.
-        private void CleanViewportTempFolder()
+        // What is in the cache folder outlives the editor: turning a folder of
+        // dds into png is the slow part of showing a model, and the same models
+        // come back run after run. What nothing has asked for in a fortnight is
+        // dropped instead - by the time it was last used, which the reader of a
+        // cached texture writes onto it.
+        //
+        // Cleaning on the way in rather than on the way out: nothing holds these
+        // files open yet, and a session that ended badly still gets cleaned up
+        // after.
+        private void PruneViewportTempFolder()
         {
             try
             {
+                DateTime cutoff = DateTime.UtcNow.AddDays(-ViewportCacheDays);
+
                 foreach (string path in Directory.GetFiles(ViewportTempFolder))
                 {
-                    // a file the viewer has not let go of yet is left for the
-                    // next run to clear
-                    try { File.Delete(path); }
+                    try
+                    {
+                        DateTime used = File.GetLastAccessTimeUtc(path);
+                        DateTime written = File.GetLastWriteTimeUtc(path);
+                        if (written > used)
+                            used = written;
+
+                        if (used < cutoff)
+                            File.Delete(path);
+                    }
                     catch (IOException) { }
                     catch (UnauthorizedAccessException) { }
                 }
@@ -813,10 +881,17 @@ namespace OMF_Editor
 
             try
             {
-                // still good within a session: the same model rebuilt over and
-                // over does not pay for its textures again
+                // still good while the dds it came from has not moved on: the
+                // same model, rebuilt over and over and reopened another day,
+                // does not pay for its textures again
                 if (File.Exists(png) && File.GetLastWriteTimeUtc(png) >= File.GetLastWriteTimeUtc(dds))
+                {
+                    // this is the date the cache is swept by - the write date
+                    // says when it was converted, and has to keep saying that
+                    try { File.SetLastAccessTimeUtc(png, DateTime.UtcNow); }
+                    catch (Exception) { }
                     return png;
+                }
 
                 using (Bitmap bitmap = DdsImage.Load(dds))
                     bitmap.Save(png, System.Drawing.Imaging.ImageFormat.Png);
@@ -1057,6 +1132,13 @@ namespace OMF_Editor
             return ViewportHelpText().Contains("--watch");
         }
 
+        // An older viewer draws translucency the one way it knows and has no
+        // console to be told otherwise, so the box has nothing to offer.
+        private bool ViewportBlendingSupported()
+        {
+            return ViewportHelpText().Contains("--blending");
+        }
+
         // The viewer reports itself idle well before its window exists - it has
         // a scene to import and a GL context to bring up first - so the handle
         // is waited for rather than read once, or the window would be left
@@ -1127,6 +1209,20 @@ namespace OMF_Editor
                 if (ViewportHelpText().Contains("--grid-reflection"))
                     arguments += " --grid-reflection=0";
 
+                // The shipped config asks for dual depth peeling on everything.
+                // It is the exact answer to overlapping translucent surfaces,
+                // and it pays for it with a pass over the geometry per layer,
+                // every frame of a playing motion. An X-Ray model is opaque but
+                // for a scope glass or a hud part, and what alpha it has is
+                // usually cut out rather than blended - so the viewport takes
+                // the single pass approximation, and the box on the tool strip
+                // buys the exact one back when a model really needs it.
+                // and the box goes away on a viewer that has no such option
+                viewportBlendingItem.Visible = ViewportBlendingSupported();
+                viewportBlendingSeparator.Visible = viewportBlendingItem.Visible;
+                if (viewportBlendingItem.Visible)
+                    arguments += " --blending=" + ViewportBlendingMode;
+
                 if (viewportAutoPlayItem.Checked && ViewportAutoPlaySupported())
                     arguments += " --animation-autoplay";
 
@@ -1150,6 +1246,7 @@ namespace OMF_Editor
                 }
 
                 viewportStarted = true;
+                RefuseViewerFileDrops();
 
                 if (viewportTornOff)
                 {
@@ -1173,6 +1270,26 @@ namespace OMF_Editor
             }
         }
 
+        // The viewer takes dropped files itself - VTK asks for them the old way,
+        // with WS_EX_ACCEPTFILES and WM_DROPFILES - and answers an OMF with a
+        // complaint about an unknown format, which is no use to anybody inside
+        // the editor. So the style is taken off its window as soon as it opens:
+        // the picture stops being a drop target, and the editor decides what
+        // happens over the viewport.
+        private void RefuseViewerFileDrops()
+        {
+            if (viewerWindow == IntPtr.Zero)
+                return;
+            try
+            {
+                DragAcceptFiles(viewerWindow, false);
+            }
+            catch (Exception exp)
+            {
+                Debug.WriteLine(exp.ToString());
+            }
+        }
+
         private void StopViewer()
         {
             viewportStarted = false;
@@ -1180,44 +1297,73 @@ namespace OMF_Editor
             if (viewerProcess == null)
                 return;
 
-            viewportStoppingViewer = true;	// the exit below is not the user's doing
+            // Let go of it before the kill. The exit notification comes on a
+            // thread of its own and can arrive well after this method returns -
+            // a viewer holding a heavy model takes its time dying, longer than
+            // the wait below - and an exit that is our own doing must not be
+            // read as the user closing the viewer, which puts the viewport out.
+            Process closing = viewerProcess;
+            viewerProcess = null;
+            closing.Exited -= ViewerProcessExited;
+            closing.EnableRaisingEvents = false;
+
             try
             {
-                if (!viewerProcess.HasExited)
-                    viewerProcess.Kill();
+                if (!closing.HasExited)
+                    closing.Kill();
                 // Kill only asks for the end, it does not wait for it, and until
                 // the viewer is really gone it still holds the preview open - the
                 // cleanup that follows would then leave the file behind
-                viewerProcess.WaitForExit(3000);
-                viewerProcess.Close();
+                closing.WaitForExit(3000);
+                closing.Close();
             }
             catch (Exception) { }
-            viewerProcess = null;
-            viewportStoppingViewer = false;
         }
 
         private void ViewerProcessExited(object sender, EventArgs e)
         {
-            if (viewportStoppingViewer)
+            // a viewer we have already let go of has nothing to say
+            if (!ReferenceEquals(sender, viewerProcess))
                 return;
+
+            int code;
             try
             {
-                this.BeginInvoke((MethodInvoker)delegate { OnViewerClosed(); });
+                code = ((Process)sender).ExitCode;
+            }
+            catch (Exception)
+            {
+                code = 0;
+            }
+
+            try
+            {
+                this.BeginInvoke((MethodInvoker)delegate { OnViewerClosed(code); });
             }
             catch (Exception) { }
         }
 
         // Closing the torn off window is how one says the viewport is not wanted
         // any more - there is nothing left to show, so the viewport goes off.
-        private void OnViewerClosed()
+        // A viewer that fell over instead is a different matter: a heavy model
+        // can be more than it can carry, and putting the viewport out over that
+        // would lose the model and the size it was set to as well. That one
+        // leaves the viewport standing, with the reason where the model was.
+        private void OnViewerClosed(int exitCode)
         {
-            if (viewportStoppingViewer || !viewportEnabled)
+            if (!viewportEnabled)
                 return;
 
             viewportStarted = false;
             viewerWindow = IntPtr.Zero;
             viewportTornOff = false;	// next time it opens in the editor again
             UpdateViewportTearButton();
+
+            if (exitCode != 0)
+            {
+                viewportStatusLabel.Text = "The viewer stopped by itself - Reload brings it back";
+                return;
+            }
 
             viewportShowItem.Checked = false;
             EnableViewport(false);
@@ -1227,6 +1373,27 @@ namespace OMF_Editor
         private void ViewportReloadClick(object sender, EventArgs e)
         {
             RequestViewportUpdate(true);
+        }
+
+        private bool ViewportAlphaBlending
+        {
+            get { return viewportBlendingBox != null && viewportBlendingBox.Checked; }
+        }
+
+        private string ViewportBlendingMode
+        {
+            get { return ViewportAlphaBlending ? "ddp" : "stochastic"; }
+        }
+
+        // Blending is settled on the command line, so a running viewer is
+        // brought up again in the other mode - which costs the camera it was
+        // looking from, the same as changing autoplay does.
+        private void ViewportBlendingChanged(object sender, EventArgs e)
+        {
+            viewportSettings.Write("ViewportAlphaBlending", ViewportAlphaBlending ? "1" : "0");
+
+            if (ViewerRunning)
+                StartViewer();
         }
 
         // Autoplay is settled when the viewer starts, so a running one is

@@ -8,6 +8,58 @@ The preview is built by `converter.dll`, which bakes the model and the selected
 motion into a binary glTF file, and rendered by [f3d](https://f3d.app) - a copy
 of which ships next to the editor in an `f3d` folder of its own.
 
+`Alpha Blending (slower performance)` on the viewport tool strip picks how translucent
+surfaces are drawn. Off - the default - transparency is approximated in a single
+pass (`--blending=stochastic`), which comes out slightly grainy and costs almost
+nothing. On, overlapping translucent surfaces are blended exactly, by dual depth
+peeling (`--blending=ddp`), which walks the geometry once per layer and shows in
+the frame rate of a playing motion. The f3d config that ships with the viewer
+asks for peeling on everything, and this is what overrides it: an X-Ray model is
+opaque but for a scope glass or a hud part, and what alpha it has is usually cut
+out rather than blended. The setting is remembered, and switching it brings the
+viewer up again - which starts the camera over.
+
+Everything the viewport builds goes into a `viewport_cache` folder beside the
+editor: the preview it hands to the viewer, the OMF dumped for it, and a png of
+every texture the model asks for. The pngs are the slow part - a folder of dds
+takes real time to turn - so the cache is kept between runs, and the editor only
+sweeps it on the way in, dropping whatever nothing has asked for in two weeks. A
+texture that goes on being used has its date renewed each time it is handed over,
+so it stays as long as the model does.
+
+The status line of the viewport ends with `H - viewer keys` on a plate of its
+own. Those keys belong to the viewer, not to the editor: click the picture
+first, and H lists everything f3d answers to. They are read as the letters that
+are typed, so they want a latin keyboard layout - of the editor's own doing only
+`Space`, which it forwards to the viewer, works from a russian one.
+
+## Dropping files in
+
+`.omf`, `.skl`, `.skls` and `.ogf` can be dragged onto the editor window
+straight from explorer, several at a time.
+
+- an OMF opens. With a file already open the drop asks first: yes opens the
+  dropped file, no adds its motions to the file open, the way the merge button
+  does
+- a `.skl`/`.skls` goes through the same import as
+  `File -> Load/add from skl/skls...` - added to the open file, or made into an
+  OMF around the skeleton of the SDK file when nothing is open
+- an `.ogf` becomes the model of the viewport, which comes out if it was hidden
+
+A drop of several files takes the model first, so the motions that follow it
+are previewed right away.
+
+A viewport with a model in it is the one place that takes nothing: the cursor
+says no over the whole panel. The viewer would otherwise take the file itself -
+VTK asks for dropped files the old way, with `WS_EX_ACCEPTFILES` - and answer an
+OMF with a complaint about an unknown format, so the editor takes that style off
+the viewer window as soon as it opens and refuses the area around it as well.
+
+While the viewport stands empty it does take drops: what fills it then is the
+`Append OGF` button asking for a model, and a model dropped on it is the answer.
+The button is up for exactly as long as there is no model - and as long as there
+is no viewer window in the way.
+
 ## Building
 
 ### What you need
