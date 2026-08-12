@@ -390,15 +390,25 @@ inline void xr_ogf_v4::partition_io::import(xr_reader& r, xr_bone_vec& all_bones
 			}
 		}
 		uint_fast32_t id = r.r_u32();
-		xr_assert(id < MAX_BONES);
+		// MAX_BONES used to be asserted here, but that limit is the render
+		// palette's, not the skeleton's - files with more than 64 bones are
+		// ordinary. The id is kept as a uint16_t, so that is the real bound,
+		// and a file past it is thrown out rather than aborting the process.
+		if (id > UINT16_MAX) {
+			msg("bone id %u is out of range in partition %s", unsigned(id), m_name.c_str());
+			throw xr_error();
+		}
 		if (all_bones.size() <= id)
 			all_bones.resize(id + 1);
 		if (all_bones[id] == 0) {
 			xr_ogf_v4::bone_io* bone = new xr_ogf_v4::bone_io;
 			bone->define(uint16_t(id), name);
 			all_bones[id] = bone;
-		} else {
-			xr_assert(all_bones.at(id)->name() == name);
+		} else if (all_bones.at(id)->name() != name) {
+			// The same bone named two ways in two partitions is not worth
+			// dropping the file over - the id is what the motions go by.
+			msg("bone %u is %s in partition %s but %s elsewhere", unsigned(id),
+					name.c_str(), m_name.c_str(), all_bones.at(id)->name().c_str());
 		}
 		m_bones.push_back(name);
 	}
