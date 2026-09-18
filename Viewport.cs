@@ -21,6 +21,9 @@ namespace OMF_Editor
         // one, and enough of them per frame make the scrubber feel continuous
         const int ViewportFrameSteps = 100;
         const float MotionFps = 30.0f;
+
+        // ViewportBuildGLBTime: the motion's keys are made for another skeleton
+        const int ViewportMotionMismatch = -7;
         // how long an unused file is kept in the viewport cache, see
         // PruneViewportTempFolder
         const int ViewportCacheDays = 14;
@@ -981,6 +984,7 @@ namespace OMF_Editor
             {
                 int result = 0;
                 string error = null;
+                bool mismatch = false;
                 try
                 {
                     if (omfPath != null)
@@ -995,6 +999,16 @@ namespace OMF_Editor
                         // and scrubs it on its own. Built aside and copied over,
                         // so it never gets to read a half written file
                         result = ViewportBuildGLBTime(motion, tempPath, -1);
+
+                        // a motion merged in from another skeleton isn't
+                        // played: the bind pose takes the place of whatever
+                        // was shown before, so it doesn't look like its own
+                        if (result == ViewportMotionMismatch)
+                        {
+                            mismatch = true;
+                            result = ViewportBuildGLBTime("", tempPath, -1);
+                        }
+
                         if (result != 0)
                             error = ViewportLastError();
                         else
@@ -1009,9 +1023,10 @@ namespace OMF_Editor
 
                 int code = result;
                 string message = error;
+                bool unfit = mismatch;
                 try
                 {
-                    this.BeginInvoke((MethodInvoker)delegate { OnViewportModelBuilt(code, message, motion); });
+                    this.BeginInvoke((MethodInvoker)delegate { OnViewportModelBuilt(code, message, motion, unfit); });
                 }
                 catch (Exception) { }
             });
@@ -1045,7 +1060,7 @@ namespace OMF_Editor
             catch (IOException) { }
         }
 
-        private void OnViewportModelBuilt(int result, string error, string motion)
+        private void OnViewportModelBuilt(int result, string error, string motion, bool unfit = false)
         {
             viewportBusy = false;
 
@@ -1057,12 +1072,14 @@ namespace OMF_Editor
 
             string model = string.IsNullOrEmpty(viewportModelPath) ? "" : Path.GetFileName(viewportModelPath);
             string text = string.IsNullOrEmpty(motion) ? model + " - bind pose" : model + " - " + motion;
+            if (unfit)
+                text = model + " - bind pose  [" + motion + " is made for another skeleton, not played]";
 
             // an OMF lists exactly the bones of the skeleton it was made for, so
             // differing counts mean the motions belong to another model
             int modelBones = ViewportGetModelBoneCount();
             int motionBones = ViewportGetMotionBoneCount();
-            if (!string.IsNullOrEmpty(motion) && motionBones != 0 && motionBones != modelBones)
+            if (!unfit && !string.IsNullOrEmpty(motion) && motionBones != 0 && motionBones != modelBones)
                 text += string.Format("  [skeletons differ: model {0}, omf {1}]", modelBones, motionBones);
 
             viewportStatusLabel.Text = text;

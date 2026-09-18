@@ -25,6 +25,7 @@ enum {
 	VP_LOAD_FAILED		= -4,
 	VP_UNKNOWN_MOTION	= -5,
 	VP_EXPORT_FAILED	= -6,
+	VP_MOTION_MISMATCH	= -7,	// keys made for another skeleton
 };
 
 std::string g_error;
@@ -249,6 +250,13 @@ _declspec(dllexport) int ViewportBuildGLBTime(const char* motion_name, const cha
 			g_error = "unknown motion ";
 			g_error += motion_name;
 			return VP_UNKNOWN_MOTION;
+		}
+		// the loader leaves a motion whose keys do not fit the skeleton empty
+		if (motion->bone_motions().empty()) {
+			g_error = "motion ";
+			g_error += motion_name;
+			g_error += " is made for another skeleton";
+			return VP_MOTION_MISMATCH;
 		}
 	}
 

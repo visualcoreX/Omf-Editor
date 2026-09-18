@@ -17,13 +17,13 @@ struct xr_ogf_v4::partition_io: public xr_partition {
 };
 
 struct xr_ogf_v4::bone_motion_io: public xr_ogf::bone_motion_io {
-	void	import(xr_reader& r, uint_fast32_t num_keys);
+	void	import(xr_reader& r, uint_fast32_t num_keys, size_t end);
 };
 
 struct xr_ogf_v4::motion_io: public xr_skl_motion {
 			motion_io();
 	uint16_t	import_params(xr_reader& r, unsigned version);
-	void		import_bone_motions(xr_reader& r, xr_bone_vec& all_bones);
+	void		import_bone_motions(xr_reader& r, xr_bone_vec& all_bones, size_t end);
 };
 
 inline xr_ogf_v4::motion_io::motion_io() { m_fps = OGF4_MOTION_FPS; }
@@ -289,11 +289,36 @@ void xr_ogf_v4::load_s_lods(xr_reader& r)
 	set_chunk_loaded(OGF4_S_LODS);
 }
 
-void xr_ogf_v4::bone_motion_io::import(xr_reader& r, uint_fast32_t num_keys)
+// Size of one bone's keys, flags byte left out.
+static uint64_t bone_keys_size(unsigned flags, uint64_t num_keys)
+{
+	uint64_t size;
+	if (flags & KPF_FLOAT)
+		size = (flags & KPF_R_ABSENT) ? 16 : 4 + 16*num_keys;
+	else
+		size = (flags & KPF_R_ABSENT) ? 8 : 4 + 8*num_keys;
+
+	if (!(flags & KPF_T_PRESENT))
+		size += 12;
+	else if (flags & KPF_FLOAT)
+		size += 4 + 12*num_keys;
+	else
+		size += 4 + ((flags & KPF_T_HQ) ? 6 : 3)*num_keys + 24;
+	return size;
+}
+
+// `end` is where the motion's chunk ends. The reader does no bounds checks of
+// its own, and a motion whose data does not fit the skeleton - one merged in
+// from an OMF of another skeleton, say - would otherwise be read far past it.
+void xr_ogf_v4::bone_motion_io::import(xr_reader& r, uint_fast32_t num_keys, size_t end)
 {
 	create_envelopes();
 
+	if (r.tell() >= end)
+		throw xr_error();
 	unsigned flags = r.r_u8();
+	if (bone_keys_size(flags, num_keys) > end - r.tell())
+		throw xr_error();
 
 	if (flags & KPF_FLOAT) {
 		if (flags & KPF_R_ABSENT) {
@@ -340,20 +365,25 @@ void xr_ogf_v4::bone_motion_io::import(xr_reader& r, uint_fast32_t num_keys)
 	}
 }
 
-inline void xr_ogf_v4::motion_io::import_bone_motions(xr_reader& r, xr_bone_vec& all_bones)
+inline void xr_ogf_v4::motion_io::import_bone_motions(xr_reader& r, xr_bone_vec& all_bones, size_t end)
 {
+	if (end - r.tell() < 4)
+		throw xr_error();
 	uint_fast32_t num_keys = r.r_u32();
 	m_frame_start = 0;
 	m_frame_end = int32_t(num_keys & INT32_MAX);
 
 	assert(m_bone_motions.empty());
 	m_bone_motions.reserve(all_bones.size());
-	for (xr_bone_vec_it it = all_bones.begin(), end = all_bones.end(); it != end; ++it) {
+	for (xr_bone_vec_it it = all_bones.begin(), last = all_bones.end(); it != last; ++it) {
 		xr_ogf_v4::bone_motion_io* bm = new xr_ogf_v4::bone_motion_io;
 		bm->name() = (*it)->name();
-		bm->import(r, num_keys);
 		m_bone_motions.push_back(bm);
+		bm->import(r, num_keys, end);
 	}
+	// keys left over belong to bones this skeleton does not have
+	if (r.tell() != end)
+		throw xr_error();
 }
 
 void xr_ogf_v4::load_s_motions(xr_reader& r)
@@ -363,8 +393,10 @@ void xr_ogf_v4::load_s_motions(xr_reader& r)
 	size_t num_motions = r.r_u32();
 	xr_assert(m_motions.size() == num_motions);
 	for (uint32_t id = 1; id <= num_motions; ++id) {
-		if (!r.find_chunk(id))
+		size_t size = r.find_chunk(id);
+		if (!size)
 			xr_not_expected();
+		size_t end = r.tell() + size;
 
 		const char* name = r.skip_sz();
 		motion_io* smotion = static_cast<motion_io*>(find_motion(name));
@@ -379,7 +411,15 @@ void xr_ogf_v4::load_s_motions(xr_reader& r)
 			msg("unknown motion %s", name);
 			throw xr_error();
 		}
-		smotion->import_bone_motions(r, m_bones);
+		// A motion made for another skeleton - the editor lets such motions
+		// be merged in - is left without keys instead of failing the whole
+		// file, so the rest of it still loads. The viewport tells an empty
+		// motion apart and does not play it.
+		try {
+			smotion->import_bone_motions(r, m_bones, end);
+		} catch (xr_error&) {
+			clear_container(smotion->bone_motions());
+		}
 		r.debug_find_chunk();
 	}
 	set_chunk_loaded(OGF4_S_MOTIONS);

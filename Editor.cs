@@ -170,6 +170,7 @@ namespace OMF_Editor
             using (BinaryReader reader = new BinaryReader(File.Open(filename, FileMode.Open)))
             {
                 AnimationsContainer omf_file = new AnimationsContainer(reader, this);
+                omf_file.FileName = filename;
                 //Загрузка костей
                 omf_file.bone_cont = new BoneContainer(reader, this);
                 //Загрузка параметров анимаций
@@ -198,6 +199,18 @@ namespace OMF_Editor
 
         public bool CompareOMF(AnimationsContainer omf_1, AnimationsContainer omf_2)
         {
+            // Motion data holds keys for every bone of its skeleton, one after
+            // another. Motions of a skeleton with another bone count don't fit
+            // this one: they are still added, but the viewport won't play them.
+            int bones_1 = BoneCount(omf_1), bones_2 = BoneCount(omf_2);
+            if (bones_1 != bones_2)
+            {
+                MessageBox.Show($"Skeletons don't match: motions of {Path.GetFileName(omf_2.FileName)} are made for {bones_2} bones, the open file has {bones_1}.\n\n" +
+                    "The motions are added, but the viewport won't play them.",
+                    "Info", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return true;
+            }
+
             if (omf_1.bone_cont.Count != omf_2.bone_cont.Count)
             {
                 if (MessageBox.Show($"Motion skeletons are different - Current: {omf_1.bone_cont.Count}, New: {omf_2.bone_cont.Count}. Continue?", "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.No)
@@ -232,6 +245,14 @@ namespace OMF_Editor
             }
 
             return true;
+        }
+
+        private static int BoneCount(AnimationsContainer omf)
+        {
+            int count = 0;
+            foreach (BoneParts part in omf.bone_cont.parts)
+                count += part.bones.Count;
+            return count;
         }
 
         public string ReadSuperString(BinaryReader reader)
