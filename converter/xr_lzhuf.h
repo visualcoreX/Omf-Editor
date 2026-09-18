@@ -76,7 +76,7 @@ public:
 		~_lzhuf();
 
 	void	Encode(uint8_t*& _code, size_t& _codesize, const uint8_t* _text, size_t _textsize);
-	void	Decode(uint8_t*& _text, size_t& _textsize, const uint8_t* _code, size_t _codesize);
+	bool	Decode(uint8_t*& _text, size_t& _textsize, const uint8_t* _code, size_t _codesize);
 };
 
 class xr_lzhuf {
@@ -91,7 +91,7 @@ protected:
 
 public:
 	static void	compress(uint8_t*& _code, size_t& _codesize, const uint8_t* _text, size_t _textsize);
-	static void	decompress(uint8_t*& _text, size_t& _textsize, const uint8_t* _code, size_t _codesize);
+	static bool	decompress(uint8_t*& _text, size_t& _textsize, const uint8_t* _code, size_t _codesize);
 };
 
 inline _lzhuf::_lzhuf()
@@ -111,9 +111,9 @@ inline void xr_lzhuf::compress(uint8_t*& _code, size_t& _codesize, const uint8_t
 	instance()->m_lzhuf.Encode(_code, _codesize, _text, _textsize);
 }
 
-inline void xr_lzhuf::decompress(uint8_t*& _text, size_t& _textsize, const uint8_t* _code, size_t _codesize)
+inline bool xr_lzhuf::decompress(uint8_t*& _text, size_t& _textsize, const uint8_t* _code, size_t _codesize)
 {
-	instance()->m_lzhuf.Decode(_text, _textsize, _code, _codesize);
+	return instance()->m_lzhuf.Decode(_text, _textsize, _code, _codesize);
 }
 
 } // end of namespace xray_re

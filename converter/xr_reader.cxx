@@ -46,14 +46,13 @@ xr_reader* xr_reader::open_chunk(uint32_t id)
 	size_t size = find_chunk(id, &compressed);
 	if (size == 0)
 		return 0;
-	if (compressed) {
-		size_t real_size;
-		uint8_t* data;
-		xr_lzhuf::decompress(data, real_size, m_p, size);
+	// a chunk flagged compressed that does not decompress is taken as it is,
+	// the way the game takes it - see _lzhuf::Decode
+	size_t real_size;
+	uint8_t* data;
+	if (compressed && xr_lzhuf::decompress(data, real_size, m_p, size))
 		return new xr_temp_reader(data, real_size);
-	} else {
-		return new xr_reader(m_p, size);
-	}
+	return new xr_reader(m_p, size);
 }
 
 void xr_reader::close_chunk(xr_reader*& r) const
@@ -77,14 +76,11 @@ xr_reader* xr_reader::open_chunk_next(uint32_t& _id, xr_reader* prev)
 		assert(m_p + size <= m_end);
 		m_next = m_p + size;
 		_id = id;
-		if (id & CHUNK_COMPRESSED) {
-			size_t real_size;
-			uint8_t* data;
-			xr_lzhuf::decompress(data, real_size, m_p, size);
+		size_t real_size;
+		uint8_t* data;
+		if ((id & CHUNK_COMPRESSED) && xr_lzhuf::decompress(data, real_size, m_p, size))
 			return new xr_temp_reader(data, real_size);
-		} else {
-			return new xr_reader(m_p, size);
-		}
+		return new xr_reader(m_p, size);
 	}
 	return 0;
 }

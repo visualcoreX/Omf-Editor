@@ -508,13 +508,25 @@ void _lzhuf::Encode(uint8_t*& _code, size_t& _codesize, const uint8_t* _text, si
 	_codesize = m_dest_pos;
 }
 
-void _lzhuf::Decode(uint8_t*& _text, size_t& _textsize, const uint8_t* _code, size_t _codesize)  /* recover */
+// Fails on data that is not LZH at all. Some mods mark plain chunks of their
+// models as compressed to keep the SDK out - the game reads those chunks as
+// they are - and decoding them ran for ever: the size up front is garbage and
+// the decoder kept feeding on zeros past the end of the data.
+bool _lzhuf::Decode(uint8_t*& _text, size_t& _textsize, const uint8_t* _code, size_t _codesize)  /* recover */
 {
 	int i, j, k, r, c;
 	size_t count;
 
-	m_dest_limit = textsize = *(uint32_t*)_code;
+	if (_codesize < 4)
+		return false;
+	textsize = *(const uint32_t*)_code;
+	// a code can't stand for more than F bytes and takes at least a bit
+	if (textsize > (_codesize - 4)*8*F + 1024)
+		return false;
+	m_dest_limit = textsize ? textsize : 1;
 	m_dest = static_cast<uint8_t*>(malloc(m_dest_limit));
+	if (m_dest == 0)
+		return false;
 	m_dest_pos = 0;
 
 	m_src_limit = codesize = _codesize;
@@ -529,6 +541,13 @@ void _lzhuf::Decode(uint8_t*& _text, size_t& _textsize, const uint8_t* _code, si
 		text_buf[i] = ' ';
 	r = N - F;
 	for (count = 0; count < textsize; ) {
+		// the bit reader looks ahead by two bytes at most; anything further
+		// past the end means the data was never compressed
+		if (m_src_pos > m_src_limit + 2) {
+			free(m_dest);
+			m_dest = 0;
+			return false;
+		}
 		c = DecodeChar();
 		if (c < 256) {
 			putc(c);
@@ -549,14 +568,16 @@ void _lzhuf::Decode(uint8_t*& _text, size_t& _textsize, const uint8_t* _code, si
 	}
 	_text = m_dest;
 	_textsize = textsize;
+	return true;
 }
 
 int _lzhuf::getc()
 {
 	if (m_src_pos < m_src_limit)
 		return m_src[m_src_pos++];
-	else
-		return -1;
+	// counted on past the end, so Decode can tell how far it overran
+	++m_src_pos;
+	return -1;
 }
 
 void _lzhuf::putc(int c)

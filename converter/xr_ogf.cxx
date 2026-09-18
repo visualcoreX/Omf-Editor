@@ -119,6 +119,7 @@ void xr_ogf::check_unhandled_chunks(xr_reader& r) const
 	// FIXME: there is no need to "open" chunks
 	uint32_t id;
 	for (xr_reader* s = 0; (s = r.open_chunk_next(id, s)) != 0;) {
+		id &= ~uint32_t(xr_reader::CHUNK_COMPRESSED);
 		if (!is_chunk_loaded(id))
 			msg("unhandled chunk %u", id);
 	}
