@@ -176,7 +176,15 @@ namespace OMF_Editor
                 omf_file.AnimsParamsCount = reader.ReadInt16();
 
                 //Проверка
-                if (omf_file.AnimsCount != omf_file.AnimsParamsCount) return null;
+                if (omf_file.AnimsCount != omf_file.AnimsParamsCount)
+                {
+                    // Nothing downstream could line these two up, so the file is
+                    // turned down - but silently it looks like the window simply
+                    // ignored the file, so the numbers are named here.
+                    MessageBox.Show($"Can't read {Path.GetFileName(filename)}: it holds {omf_file.AnimsCount} motion(s) but {omf_file.AnimsParamsCount} set(s) of motion parameters.",
+                        "Open", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return null;
+                }
 
                 for(int i = 0; i < omf_file.AnimsParamsCount; i++)
                 {

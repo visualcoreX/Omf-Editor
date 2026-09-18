@@ -139,7 +139,13 @@ namespace OMF_Editor
 
         private void OpenFile(string filename)
         {
-            Main_OMF = editor.OpenOMF(filename);
+            // A file the reader turns down leaves the one already open alone:
+            // losing it as well would be a second surprise on top of the first.
+            AnimationsContainer opened = editor.OpenOMF(filename);
+            if (opened == null)
+                return;
+
+            Main_OMF = opened;
 
             if (Main_OMF != null)
             {
