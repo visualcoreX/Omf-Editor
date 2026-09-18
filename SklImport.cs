@@ -273,7 +273,7 @@ namespace OMF_Editor
         {
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
-                dialog.Filter = "Skls file|*.skls|Skl file|*.skl";
+                dialog.Filter = "SDK motion (*.skl, *.skls)|*.skl;*.skls|Skls file|*.skls|Skl file|*.skl";
                 dialog.Title = "Load motions from an SDK file";
                 dialog.Multiselect = true;
                 if (dialog.ShowDialog() != DialogResult.OK)
@@ -353,6 +353,12 @@ namespace OMF_Editor
                     buffer.Length = 0;
                     SklGetName(i, buffer, buffer.Capacity);
                     string name = buffer.ToString();
+
+                    // a file of one motion is named for it - exporters tend to
+                    // leave the name inside as "unnamed" or the like
+                    if (count == 1)
+                        name = Path.GetFileNameWithoutExtension(path);
+
                     if (name.Length == 0)
                         continue;
 

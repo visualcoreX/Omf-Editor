@@ -1,7 +1,8 @@
 // Reading motions out of SDK files (.skl, .skls) for the editor. They keep
-// their keys as plain envelopes, while an OMF stores them quantized, one stream
-// per bone of the model - so the motions are sampled frame by frame here and
-// packed into exactly the layout xr_ogf_v4::bone_motion_io::import reads back.
+// their keys as plain envelopes, while an OMF stores them one stream per bone of
+// the model - so the motions are sampled frame by frame here and packed into
+// exactly the layout xr_ogf_v4::bone_motion_io::import reads back. The keys stay
+// 32 bit floats (KPF_FLOAT) rather than being squeezed into the stock 16/8 bit.
 
 #include <cmath>
 #include <cstring>
@@ -148,8 +149,10 @@ void euler_to_quat(const fvector3& r, fquaternion& q)
 	}
 }
 
-// One bone stream: every frame sampled, then written as the reader expects.
-void write_bone_motion(blob& out, const xr_bone_motion* bm, int num_frames)
+// One bone stream: every frame sampled, then written as the reader expects -
+// quantized the way stock game files are, or with full_precision as the plain
+// floats of KPF_FLOAT keys.
+void write_bone_motion(blob& out, const xr_bone_motion* bm, int num_frames, bool full_precision)
 {
 	std::vector<fvector3> positions;
 	std::vector<fquaternion> rotations;
@@ -174,9 +177,14 @@ void write_bone_motion(blob& out, const xr_bone_motion* bm, int num_frames)
 	for (int f = 1; f != num_frames; ++f) {
 		const fquaternion& a = rotations[0];
 		const fquaternion& b = rotations[size_t(f)];
-		if (quantize_q(a.x) != quantize_q(b.x) || quantize_q(a.y) != quantize_q(b.y) ||
-				quantize_q(a.z) != quantize_q(b.z) || quantize_q(a.w) != quantize_q(b.w))
+		if (full_precision) {
+			if (std::fabs(a.x - b.x) > 1e-7f || std::fabs(a.y - b.y) > 1e-7f ||
+					std::fabs(a.z - b.z) > 1e-7f || std::fabs(a.w - b.w) > 1e-7f)
+				same_rotation = false;
+		} else if (quantize_q(a.x) != quantize_q(b.x) || quantize_q(a.y) != quantize_q(b.y) ||
+				quantize_q(a.z) != quantize_q(b.z) || quantize_q(a.w) != quantize_q(b.w)) {
 			same_rotation = false;
+		}
 		if (!positions[0].similar(positions[size_t(f)], 1e-6f))
 			same_position = false;
 		if (!same_rotation && !same_position)
@@ -188,7 +196,35 @@ void write_bone_motion(blob& out, const xr_bone_motion* bm, int num_frames)
 		flags |= KPF_R_ABSENT;
 	if (!same_position)
 		flags |= KPF_T_PRESENT;
+	if (full_precision)
+		flags |= KPF_FLOAT;
 	out.u8(flags);
+
+	if (full_precision) {
+		// the keys as the SDK file has them, 32 bits a component
+		if (!same_rotation)
+			out.u32(0);		// crc of the keys, the loader skips it
+		for (int f = 0, n = same_rotation ? 1 : num_frames; f != n; ++f) {
+			const fquaternion& q = rotations[size_t(f)];
+			out.f32(q.x);
+			out.f32(q.y);
+			out.f32(q.z);
+			out.f32(q.w);
+		}
+		if (same_position) {
+			out.f32(positions[0].x);
+			out.f32(positions[0].y);
+			out.f32(positions[0].z);
+		} else {
+			out.u32(0);		// crc again
+			for (int f = 0; f != num_frames; ++f) {
+				out.f32(positions[size_t(f)].x);
+				out.f32(positions[size_t(f)].y);
+				out.f32(positions[size_t(f)].z);
+			}
+		}
+		return;
+	}
 
 	if (same_rotation) {
 		const fquaternion& q = rotations[0];
@@ -399,7 +435,8 @@ _declspec(dllexport) int SklGetData(int index, const char* bone_names, unsigned 
 	for (size_t i = 0; i != bones.size(); ++i) {
 		const xr_bone_motion* bm = bones[i].empty() ?
 				bone_motion_at(*motion, i) : find_bone_motion(*motion, bones[i]);
-		write_bone_motion(out, bm, num_frames);
+		// an SDK file holds its keys as floats, and they go in as such
+		write_bone_motion(out, bm, num_frames, true);
 	}
 
 	int needed = int(out.bytes.size());
