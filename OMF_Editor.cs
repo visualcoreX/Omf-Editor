@@ -526,27 +526,11 @@ namespace OMF_Editor
                 SaveOMF(Main_OMF, (sender as SaveFileDialog).FileName);
             else if (format == ".skls" || format == ".skl")
             {
-                string temp_omf_name = Main_OMF.FileName.Substring(0, Main_OMF.FileName.LastIndexOf('.')) + "_temptemp176.omf";
+                List<int> all = new List<int>();
+                for (int i = 0; i < Main_OMF.AnimsParams.Count; i++)
+                    all.Add(i);
 
-                AnimationsContainer TempOMF = editor.OpenOMF(Main_OMF.FileName);
-
-                if (File.Exists(temp_omf_name))
-                {
-                    FileInfo backup_file = new FileInfo(temp_omf_name);
-                    backup_file.Delete();
-                }
-
-                TempOMF.GunslingerRepair();
-                SaveOMF(TempOMF, temp_omf_name);
-
-                RunConverter(temp_omf_name, (sender as SaveFileDialog).FileName, 1, (format == ".skl" ? 0 : 1), "");
-                WriteBonePartsSidecar((sender as SaveFileDialog).FileName, Main_OMF.bone_cont);
-
-                if (File.Exists(temp_omf_name))
-                {
-                    FileInfo backup_file = new FileInfo(temp_omf_name);
-                    backup_file.Delete();
-                }
+                ExportSdkMotions(CopyForExport(all), (sender as SaveFileDialog).FileName, format, "");
             }
         }
 
@@ -554,55 +538,69 @@ namespace OMF_Editor
         {
             string format = Path.GetExtension((sender as SaveFileDialog).FileName);
 
-            AnimationsContainer SelectedAnims = editor.OpenOMF(Main_OMF.FileName);
-            AnimationsContainer TempOMF = editor.OpenOMF(Main_OMF.FileName);
-            TempOMF.GunslingerRepair();
-            SelectedAnims.GunslingerRepair();
-            SelectedAnims.Anims.Clear();
-            SelectedAnims.AnimsParams.Clear();
+            List<int> selected = new List<int>();
+            foreach (int idx in lbxMotions.SelectedIndices)
+                selected.Add(idx);
 
-            ListBox.SelectedIndexCollection _list = lbxMotions.SelectedIndices;
-            int count = _list.Count;
-
-            for (int i = 0; i < count; i++)
-            {
-                int idx = _list[i];
-                SelectedAnims.Anims.Add(TempOMF.Anims[idx]);
-                SelectedAnims.AnimsParams.Add(TempOMF.AnimsParams[idx]);
-            }
-
-            SelectedAnims.RecalcAllAnimIndex();
-            SelectedAnims.RecalcAnimNum();
+            AnimationsContainer SelectedAnims = CopyForExport(selected);
 
             if (format == ".omf")
                 SaveOMF(SelectedAnims, (sender as SaveFileDialog).FileName);
             else if (format == ".skls" || format == ".skl")
             {
-                string temp_omf_name = Main_OMF.FileName.Substring(0, Main_OMF.FileName.LastIndexOf('.')) + "_temptemp176.omf";
                 string motion_list = "";
+                foreach (AnimVector anim in SelectedAnims.Anims)
+                    motion_list += anim.Name + ",";
 
-                for (int i = 0; i < count; i++)
-                {
-                    int idx = _list[i];
-                    motion_list += TempOMF.Anims[idx].Name + ",";
-                }
+                ExportSdkMotions(SelectedAnims, (sender as SaveFileDialog).FileName, format, motion_list);
+            }
+        }
 
+        // The given motions as they stand in the editor - deleted ones gone,
+        // renames and edits in - rather than as the file on disk last had them.
+        // Parameters are copied, so the numbering done here leaves the open
+        // file alone; the key data is shared, nothing here changes it.
+        private AnimationsContainer CopyForExport(List<int> indices)
+        {
+            AnimationsContainer copy = new AnimationsContainer();
+            copy.bone_cont = Main_OMF.bone_cont;
+
+            foreach (int i in indices)
+            {
+                AnimationParams param = new AnimationParams(Main_OMF.AnimsParams[i]);
+
+                AnimVector anim = new AnimVector();
+                anim.Name = param.Name;		// the list shows the parameter names
+                anim.data = Main_OMF.Anims[i].data;
+                anim.RecalcSectionSize();
+
+                copy.Anims.Add(anim);
+                copy.AnimsParams.Add(param);
+            }
+
+            copy.RecalcAllAnimIndex();
+            copy.RecalcAnimNum();
+            return copy;
+        }
+
+        // The converter reads motions from an OMF only, so they go through a
+        // temporary one. It lives in the temp folder: a file made from SDK
+        // motions has no OMF of its own to put it beside.
+        private void ExportSdkMotions(AnimationsContainer omf, string out_path, string format, string motion_list)
+        {
+            string temp_omf_name = Path.Combine(Path.GetTempPath(), "omf_editor_export_" + Guid.NewGuid().ToString("N") + ".omf");
+
+            try
+            {
+                SaveOMF(omf, temp_omf_name);
+
+                RunConverter(temp_omf_name, out_path, 1, (format == ".skl" ? 0 : 1), motion_list);
+                WriteBonePartsSidecar(out_path, Main_OMF.bone_cont);
+            }
+            finally
+            {
                 if (File.Exists(temp_omf_name))
-                {
-                    FileInfo backup_file = new FileInfo(temp_omf_name);
-                    backup_file.Delete();
-                }
-
-                SaveOMF(SelectedAnims, temp_omf_name);
-
-                RunConverter(temp_omf_name, (sender as SaveFileDialog).FileName, 1, (format == ".skl" ? 0 : 1), motion_list);
-                WriteBonePartsSidecar((sender as SaveFileDialog).FileName, Main_OMF.bone_cont);
-
-                if (File.Exists(temp_omf_name))
-                {
-                    FileInfo backup_file = new FileInfo(temp_omf_name);
-                    backup_file.Delete();
-                }
+                    File.Delete(temp_omf_name);
             }
         }
 
