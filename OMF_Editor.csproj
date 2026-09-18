@@ -87,6 +87,7 @@
     <Compile Include="FileDrop.cs" />
     <Compile Include="RecentFiles.cs" />
     <Compile Include="SklImport.cs" />
+    <Compile Include="MotionSearch.cs" />
     <Compile Include="Editor.cs" />
     <Compile Include="OMF_Editor.cs">
       <SubType>Form</SubType>

@@ -33,6 +33,25 @@ first, and H lists everything f3d answers to. They are read as the letters that
 are typed, so they want a latin keyboard layout - of the editor's own doing only
 `Space`, which it forwards to the viewer, works from a russian one.
 
+## Finding a motion
+
+`Ctrl+F`, or `Tools -> Find motion`, puts a search box over the list of motions.
+What is typed there picks out the first motion whose name carries it, and the
+counter beside the box says which of how many that is.
+
+- `Enter` walks on to the next match, `Shift+Enter` back to the previous one,
+  and both wrap around the ends of the list. `F3` and the arrow keys do the same
+- `Ctrl+Enter` selects every match at once - which is how a whole family of
+  motions is deleted, cloned or saved out in one go
+- `Esc` closes the box and gives the keyboard back to the list
+
+A query with `*` or `?` in it is a pattern matched against the whole name, the
+way file names are - `*aim*_1` for the first of every aim. Anything else is
+matched as a part of the name, case insensitive.
+
+The list itself is left whole rather than filtered down to the matches: a motion
+is addressed everywhere else in the editor by its place in it.
+
 ## Dropping files in
 
 `.omf`, `.skl`, `.skls` and `.ogf` can be dragged onto the editor window
