@@ -295,7 +295,15 @@ void xr_ogf_v4::bone_motion_io::import(xr_reader& r, uint_fast32_t num_keys)
 
 	unsigned flags = r.r_u8();
 
-	if (flags & KPF_R_ABSENT) {
+	if (flags & KPF_FLOAT) {
+		if (flags & KPF_R_ABSENT) {
+			insert_key(0, r.skip<ogf_key_qr_float>());
+		} else {
+			r.r_u32();
+			for (size_t i = 0; i != num_keys; ++i)
+				insert_key(i/OGF4_MOTION_FPS, r.skip<ogf_key_qr_float>());
+		}
+	} else if (flags & KPF_R_ABSENT) {
 		insert_key(0, r.skip<ogf_key_qr>());
 	} else {
 		r.r_u32();
@@ -305,7 +313,10 @@ void xr_ogf_v4::bone_motion_io::import(xr_reader& r, uint_fast32_t num_keys)
 	if (flags & KPF_T_PRESENT) {
 		r.r_u32();
 		fvector3 t_init, t_size, value;
-		if (flags & KPF_T_HQ) {
+		if (flags & KPF_FLOAT) {
+			for (uint_fast32_t i = 0; i != num_keys; ++i)
+				insert_key(float(i)/OGF4_MOTION_FPS, r.skip<fvector3>());
+		} else if (flags & KPF_T_HQ) {
 			const ogf4_key_qt_hq* keys_qt = r.skip<ogf4_key_qt_hq>(num_keys);
 			r.r_fvector3(t_size);
 			r.r_fvector3(t_init);

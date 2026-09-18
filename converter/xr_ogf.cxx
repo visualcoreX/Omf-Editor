@@ -14,6 +14,21 @@ void xr_ogf::bone_motion_io::insert_key(float time, const ogf_key_qr* value)
 {
 	dquaternion q;
 	value->dequantize(q);
+	insert_rotation(time, q);
+}
+
+void xr_ogf::bone_motion_io::insert_key(float time, const ogf_key_qr_float* value)
+{
+	dquaternion q;
+	q.x = value->x;
+	q.y = value->y;
+	q.z = value->z;
+	q.w = value->w;
+	insert_rotation(time, q);
+}
+
+void xr_ogf::bone_motion_io::insert_rotation(float time, const dquaternion& q)
+{
 	dmatrix xform;
 	xform.rotation(q);
 	dvector3 r;
