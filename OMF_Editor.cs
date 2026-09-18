@@ -283,7 +283,14 @@ namespace OMF_Editor
 
         private void MotionParamsUpdate(bool dont_reset_pos = false)
         {
-            if (GetCurrentMotion() == null) return;
+            if (GetCurrentMotion() == null)
+            {
+                // the last motion deleted: nothing left for the fields to show
+                // or to write their edits into
+                if (Main_OMF != null && Main_OMF.AnimsParams.Count == 0 && bTextBoxEnabled)
+                    DisableInput();
+                return;
+            }
 
             if (!bTextBoxEnabled) EnableInput();
 
@@ -622,6 +629,11 @@ namespace OMF_Editor
             Main_OMF.RecalcAllAnimIndex();
             Main_OMF.RecalcAnimNum();
             UpdateList();
+
+            // an emptied list selects nothing, so no selection change comes to
+            // take the deleted motion out of the viewport
+            if (Main_OMF.Anims.Count == 0)
+                RequestViewportUpdate(true);
         }
 
         private void saveAsSelectedToolStripMenuItem_Click(object sender, EventArgs e)
@@ -703,7 +715,7 @@ namespace OMF_Editor
             if (index != ListBox.NoMatches && lbxMotions.SelectedIndices.Contains(index))
             {
                 contextMenuStrip1.Show(Cursor.Position);
-                deleteToolStripMenuItem.Enabled = lbxMotions.Items.Count > 1;
+                deleteToolStripMenuItem.Enabled = lbxMotions.Items.Count > 0;
                 cloneToolStripMenuItem.Enabled = lbxMotions.Items.Count > 0;
                 contextMenuStrip1.Visible = true;
             }
@@ -730,7 +742,7 @@ namespace OMF_Editor
         {
             if (e.KeyData == Keys.Delete)
             {
-                if (Main_OMF.Anims.Count > 1)
+                if (Main_OMF != null && Main_OMF.Anims.Count > 0)
                     deleteToolStripMenuItem_Click(sender, e);
             }
         }
